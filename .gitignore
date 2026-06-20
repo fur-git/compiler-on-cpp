@@ -6,6 +6,7 @@
 *.lo
 *.o
 *.obj
+interpreter
 
 # Precompiled Headers
 *.gch
@@ -57,6 +58,7 @@ compile_commands.json
 *.log
 *.bak
 *.swp
+exampleCode.txt
 
 # vcpkg
 vcpkg_installed/
