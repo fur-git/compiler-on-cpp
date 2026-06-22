@@ -40,7 +40,7 @@ class AssemblyCode {
         };
         AssemblyTextSection _assemblyTextSection{".section .text\n.global _start\n\n_start:"};
         AssemblyDataSection _assemblyDataSection{".section .data\n"};
-        AssemblyBssSection _assemblyBssSection{"\n.section .bss\n\nbuffer: .zero 33\n"};
+        AssemblyBssSection _assemblyBssSection{"\n.section .bss\n\n"};
         AssemblyFunctions _assemblyFunctions{"\n.section .text\n"};
     public:
         AssemblyCode(const std::string& filename) {
@@ -79,13 +79,17 @@ class Compiler {
             DIVIDE,
             NEWLINE,
             EXIT,
+            DONE,
+            IF,
+            READ,
             INVALID
         };
         std::ifstream _sourceCodeFile;
         AssemblyCode _assemblyCode;
         std::string _filename;
-        bool _exitInstructionFlag;
         bool _is64Bits;
+        uint32_t _labelCounter;
+        std::vector<uint32_t> _ifLabelStack;
         InstructionType getInstructionType(const std::string& instruction) {
             if (instruction.find("print") != std::string::npos) return InstructionType::PRINT;
             if (instruction.find("newline") != std::string::npos) return InstructionType::NEWLINE;
@@ -96,6 +100,9 @@ class Compiler {
             if (instruction.find("multiply") != std::string::npos) return InstructionType::MULTIPLY;
             if (instruction.find("divide") != std::string::npos) return InstructionType::DIVIDE;
             if (instruction.find("exit") != std::string::npos) return InstructionType::EXIT;
+            if (instruction.find("done") != std::string::npos) return InstructionType::DONE;
+            if (instruction.find("if") != std::string::npos) return InstructionType::IF;
+            if (instruction.find("read") != std::string::npos) return InstructionType::READ;
             return InstructionType::INVALID;
         }
         bool doesTheVariableExist(const std::string& variableName) {
@@ -110,8 +117,8 @@ class Compiler {
             _filename = filename;
             _sourceCodeFile.open(filename);
             _errorFlag = false;
-            _exitInstructionFlag = false;
             _is64Bits = is64Bits;
+            _labelCounter = 0;
             if (!_sourceCodeFile.is_open()) {
                 reportError("Failed to open source code file: " + filename);
                 return;
@@ -128,7 +135,12 @@ class Compiler {
             _sourceCodeFile.clear();
             _sourceCodeFile.seekg(0, std::ios::beg);
             uint32_t lineNumber = 0;
+            uint16_t conditionalCounter = 0;
             std::string line;
+            if (source.find("read") != std::string::npos || source.find("print") != std::string::npos) {
+                const std::string readPrintAssemblyCode = "buffer: .zero 33\n";
+                _assemblyCode.addInstructionToBss(readPrintAssemblyCode);
+            }
             if (source.find("print") != std::string::npos) {
                 const std::string itoaAssemblyCode = R"(
 itoa:
@@ -139,44 +151,43 @@ itoa:
     ret
 itoa_not_zero:
     movq %rax, %r8
-    xorq %r9, %r9
     xorq %r10, %r10
-    jns itoa_positive
+    testq %r8, %r8
+    jns itoa_count
     negq %r8
     movq $1, %r10
-itoa_positive:
-    leaq buffer+31(%rip), %rcx
-itoa_loop:
-    xorq %rdx, %rdx
+itoa_count:
     movq %r8, %rax
+    xorq %r9, %r9
+itoa_count_loop:
+    incq %r9
+    xorq %rdx, %rdx
     movq $10, %rdi
     divq %rdi
-    movq %rax, %r8
-    addb $'0', %dl
-    decq %rcx
-    movb %dl, (%rcx)
-    incq %r9
-    testq %r8, %r8
-    jnz itoa_loop
+    testq %rax, %rax
+    jnz itoa_count_loop
+    leaq buffer(%rip), %rcx
     cmpq $0, %r10
-    je itoa_done
-    decq %rcx
+    je itoa_sign_done
     movb $'-', (%rcx)
-    incq %r9
-itoa_done:
-    movb $0, (%rcx, %r9, 1)
-    movq %r9, %r11
-    movq %rcx, %rsi
-    leaq buffer(%rip), %rdi
-    movq %r9, %rcx
-    rep movsb
-    leaq buffer(%rip), %rdi
-    addq %r11, %rdi
-    movb $0, (%rdi)
+    incq %rcx
+itoa_sign_done:
+    addq %r9, %rcx
+    movb $0, (%rcx)
+    movq %r8, %rax
+itoa_emit_loop:
+    decq %rcx
+    xorq %rdx, %rdx
+    movq $10, %rdi
+    divq %rdi
+    addb $'0', %dl
+    movb %dl, (%rcx)
+    testq %rax, %rax
+    jnz itoa_emit_loop
     ret
 
 get_string_length:
-    movq $0, %rcx
+    xorq %rcx, %rcx
 get_string_length_loop:
     cmpb $0, (%rax)
     je get_string_length_done
@@ -188,6 +199,38 @@ get_string_length_done:
 
 )";
                 _assemblyCode.addInstructionToFunctions(itoaAssemblyCode);
+            }
+            if (source.find("read") != std::string::npos) {
+                const std::string atoiAssemblyCode = R"(
+atoi:
+    leaq buffer(%rip), %rsi
+    xorq %rax, %rax
+    xorq %r10, %r10
+    movb (%rsi), %cl
+    cmpb $'-', %cl
+    jne atoi_loop
+    movq $1, %r10
+    incq %rsi
+atoi_loop:
+    movzbq (%rsi), %rcx
+    cmpb $'0', %cl
+    jb atoi_done
+    cmpb $'9', %cl
+    ja atoi_done
+    subb $'0', %cl
+    imulq $10, %rax
+    addq %rcx, %rax
+    incq %rsi
+    jmp atoi_loop
+atoi_done:
+    cmpq $0, %r10
+    je atoi_positive
+    negq %rax
+atoi_positive:
+    ret
+
+)";
+                _assemblyCode.addInstructionToFunctions(atoiAssemblyCode);
             }
             if (source.find("newline") != std::string::npos) {
                 const std::string newlineAssemblyCode = R"(
@@ -303,11 +346,13 @@ get_string_length_done:
                             }
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
-    addq {}(%rip), {}(%rip)
+    movq {}(%rip), %rax
+    addq %rax, {}(%rip)
 )", tokens[2], tokens[1]);
                             } else {
                                 assemblyInstruction = std::format(R"(
-    addl {}(%rip), {}(%rip)
+    movl {}(%rip), %eax
+    addl %eax, {}(%rip)
 )", tokens[2], tokens[1]);
                             }
                             _assemblyCode.addInstructionToText(assemblyInstruction);
@@ -325,11 +370,13 @@ get_string_length_done:
                             }
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
-    subq {}(%rip), {}(%rip)
+    movq {}(%rip), %rax
+    subq %rax, {}(%rip)
 )", tokens[2], tokens[1]);
                             } else {
                                 assemblyInstruction = std::format(R"(
-    subl {}(%rip), {}(%rip)
+    movl {}(%rip), %eax
+    subl %eax, {}(%rip)
 )", tokens[2], tokens[1]);
                             }
                             _assemblyCode.addInstructionToText(assemblyInstruction);
@@ -421,18 +468,101 @@ get_string_length_done:
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
     movq $60, %rax
-    movslq {}(%rip), %rdi
+    movq {}(%rip), %rdi
     syscall
 )", tokens[1]);
                             } else {
                                 assemblyInstruction = std::format(R"(
-    movl $60, %eax
-    movslq {}(%rip), %edi
+    movq $60, %rax
+    movslq {}(%rip), %rdi
     syscall
 )", tokens[1]);
                             }
                             _assemblyCode.addInstructionToText(assemblyInstruction);
-                            _exitInstructionFlag = true;
+                            break;
+                        case InstructionType::IF:
+                            if (tokens.size() != 4 || tokens[2] != "equals") {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[1])) {
+                                reportError("Variable " + tokens[1] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[3])) {
+                                reportError("Variable " + tokens[3] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            _ifLabelStack.push_back(_labelCounter);
+                            if (_is64Bits) {
+                                assemblyInstruction = std::format(R"(
+    movq {}(%rip), %rax
+    cmpq {}(%rip), %rax
+    jne .Lendif_{}
+)", tokens[1], tokens[3], _labelCounter);
+                            } else {
+                                assemblyInstruction = std::format(R"(
+    movl {}(%rip), %eax
+    cmpl {}(%rip), %eax
+    jne .Lendif_{}
+)", tokens[1], tokens[3], _labelCounter);
+                            }
+                            _assemblyCode.addInstructionToText(assemblyInstruction);
+                            _labelCounter++;
+                            break;
+                        case InstructionType::DONE:
+                            if (tokens.size() != 1) {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (_ifLabelStack.empty()) {
+                                reportError("'done' without a matching 'if' at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            assemblyInstruction = std::format(R"(
+.Lendif_{}:
+)", _ifLabelStack.back());
+                            _ifLabelStack.pop_back();
+                            _assemblyCode.addInstructionToText(assemblyInstruction);
+                            break;
+                        case InstructionType::READ:
+                            if (tokens.size() != 2) {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[1])) {
+                                reportError("Variable " + tokens[1] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (_is64Bits) {
+                                assemblyInstruction = std::format(R"(
+    movq $0, %rax
+    movq $0, %rdi
+    leaq buffer(%rip), %rsi
+    movq $33, %rdx
+    syscall
+    call atoi
+    movq %rax, {}(%rip)
+)", tokens[1]);
+                            } else {
+                                assemblyInstruction = std::format(R"(
+    movq $0, %rax
+    movq $0, %rdi
+    leaq buffer(%rip), %rsi
+    movq $33, %rdx
+    syscall
+    call atoi
+    movl %eax, {}(%rip)
+)", tokens[1]);
+                            }
+                            _assemblyCode.addInstructionToText(assemblyInstruction);
                             break;
                         case InstructionType::INVALID:
                             reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
@@ -444,16 +574,19 @@ get_string_length_done:
                     _errorFlag = true;
                 }
             }
-            if (!_exitInstructionFlag) {
-                std::string finalInstruction = R"(
+            if (!_ifLabelStack.empty()) {
+                reportError("Unterminated 'if' block (missing 'done')");
+                _errorFlag = true;
+                return;
+            }
+            if (_errorFlag) { return; }
+            std::string finalInstruction = R"(
     movq $60, %rax
     xorq %rdi, %rdi
     syscall
 )";
-                _assemblyCode.addInstructionToText(finalInstruction);
-            }
+            _assemblyCode.addInstructionToText(finalInstruction);
             _assemblyCode.writeToFile();
-            if (_errorFlag) { return; }
             std::string filenameWithoutExtension = _filename.substr(0, _filename.find_last_of('.'));
             if (system(std::format("as {}.S -o {}.o", filenameWithoutExtension, filenameWithoutExtension).c_str()) != 0) {
                 reportError("Assembler failed");

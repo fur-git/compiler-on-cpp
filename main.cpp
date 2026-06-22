@@ -9,9 +9,9 @@ int main(int argc, char* argv[]) {
         std::string argument = argv[i];
         if (argument == "--clearObjectFiles") { clearObjectFiles = true; }
         else if (argument == "--clearAssemblyFiles") { clearAssemblyFiles = true; }
-        else if (sourceFile.empty()) { sourceFile = argument; }
         else if (argument == "--64bits") { is64Bits = true; }
         else if (argument == "--32bits") { is64Bits = false; }
+        else if (sourceFile.empty()) { sourceFile = argument; }
         else { std::cerr << "Usage: " << argv[0] << " [flags] <source-file>\n"; return 1; }
     }
     if (sourceFile.empty()) {
