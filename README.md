@@ -81,7 +81,7 @@ ignored. There are no comments.
 | `add` | `add X Y` | `X = X + Y`. |
 | `subtract` | `subtract X Y` | `X = X - Y`. |
 | `multiply` | `multiply X Y` | `X = X * Y`. |
-| `divide` | `divide X Y` | `X = Y / X` (integer division — see note below). |
+| `divide` | `divide X Y` | `X = X / Y` (integer division). |
 | `if` | `if X equals Y` | Run the block until `done` only when `X == Y`. |
 | `done` | `done` | Close the most recently opened `if` block. |
 | `exit` | `exit X` | Terminate the program with exit code `X`. |
@@ -182,9 +182,6 @@ Build and run:
 This is a teaching project, so the language is intentionally minimal and has a
 few sharp edges worth knowing:
 
-- **`divide` operand order.** Unlike the other arithmetic instructions,
-  `divide X Y` computes `X = Y / X` (it divides the second operand by the
-  first), not `X = X / Y`.
 - **Variable name matching is substring-based.** A name is considered to
   "exist" if it appears anywhere in the generated data section, so short names
   that are substrings of others (or of keywords like `newline`) can collide.

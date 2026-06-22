@@ -427,7 +427,7 @@ atoi_positive:
     movq {}(%rip), %rbx
     idivq %rbx
     movq %rax, {}(%rip)
-)", tokens[2], tokens[1], tokens[1]);
+)", tokens[1], tokens[2], tokens[1]);
                             } else {
                                 assemblyInstruction = std::format(R"(
     movl {}(%rip), %eax
@@ -435,7 +435,7 @@ atoi_positive:
     movl {}(%rip), %ebx
     idivl %ebx
     movl %eax, {}(%rip)
-)", tokens[2], tokens[1], tokens[1]);
+)", tokens[1], tokens[2], tokens[1]);
                             }
                             _assemblyCode.addInstructionToText(assemblyInstruction);
                             break;
