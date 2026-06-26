@@ -82,7 +82,8 @@ ignored. There are no comments.
 | `subtract` | `subtract X Y` | `X = X - Y`. |
 | `multiply` | `multiply X Y` | `X = X * Y`. |
 | `divide` | `divide X Y` | `X = X / Y` (integer division). |
-| `if` | `if X equals Y` | Run the block until `done` only when `X == Y`. |
+| `if` | `if X equals Y then` | Run the block until `else`/`done` only when `X == Y`. The `then` keyword is required. |
+| `else` | `else` | Begin the block that runs only when the matching `if` condition was false. Optional. |
 | `done` | `done` | Close the most recently opened `if` block. |
 | `exit` | `exit X` | Terminate the program with exit code `X`. |
 
@@ -124,9 +125,10 @@ newline
 
 ### Conditionals
 
-A conditional starts with `if X equals Y` and ends with `done`. The block runs
-only when the two variables are equal; otherwise execution jumps past `done`.
-Conditionals can be **nested**.
+A conditional starts with `if X equals Y then` and ends with `done`. The `then`
+keyword is **required** at the end of the `if` line. The block runs only when the
+two variables are equal; otherwise execution jumps past `done`. Conditionals can
+be **nested**.
 
 ```
 new left
@@ -134,11 +136,34 @@ new right
 set left 5
 set right 5
 
-if left equals right
+if left equals right then
   print left
   newline
 done
 ```
+
+#### `else`
+
+An optional `else` block runs only when the `if` condition is false. It goes
+between the `if` and its matching `done`:
+
+```
+new left
+new right
+set left 3
+set right 4
+
+if left equals right then
+  print left
+  newline
+else
+  print right
+  newline
+done
+```
+
+When `left == right`, only the `then` block runs; otherwise only the `else`
+block runs. Each `if` may have at most one `else`.
 
 ### Exiting
 
@@ -194,3 +219,4 @@ few sharp edges worth knowing:
 - **No numeric validation.** Non-numeric input parses as `0` or stops at the
   first non-digit; very large values can overflow without warning.
 - **Only `equals` is supported** as a comparison in `if`.
+- **`if` lines must end with `then`** and may contain at most one `else` block.

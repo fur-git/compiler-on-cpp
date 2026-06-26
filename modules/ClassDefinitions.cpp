@@ -81,15 +81,20 @@ class Compiler {
             EXIT,
             DONE,
             IF,
+            ELSE,
             READ,
             INVALID
+        };
+        struct ConditionalMetadata {
+            uint16_t labelId;
+            bool hasElse;
         };
         std::ifstream _sourceCodeFile;
         AssemblyCode _assemblyCode;
         std::string _filename;
         bool _is64Bits;
-        uint32_t _labelCounter;
-        std::vector<uint32_t> _ifLabelStack;
+        uint16_t _labelCounter;
+        std::vector<ConditionalMetadata> _conditionalMetadataStack;
         InstructionType getInstructionType(const std::string& instruction) {
             if (instruction.find("print") != std::string::npos) return InstructionType::PRINT;
             if (instruction.find("newline") != std::string::npos) return InstructionType::NEWLINE;
@@ -101,6 +106,7 @@ class Compiler {
             if (instruction.find("divide") != std::string::npos) return InstructionType::DIVIDE;
             if (instruction.find("exit") != std::string::npos) return InstructionType::EXIT;
             if (instruction.find("done") != std::string::npos) return InstructionType::DONE;
+            if (instruction.find("else") != std::string::npos) return InstructionType::ELSE;
             if (instruction.find("if") != std::string::npos) return InstructionType::IF;
             if (instruction.find("read") != std::string::npos) return InstructionType::READ;
             return InstructionType::INVALID;
@@ -481,7 +487,7 @@ atoi_positive:
                             _assemblyCode.addInstructionToText(assemblyInstruction);
                             break;
                         case InstructionType::IF:
-                            if (tokens.size() != 4 || tokens[2] != "equals") {
+                            if (tokens.size() != 5 || tokens[2] != "equals" || tokens[4] != "then") {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
@@ -496,22 +502,45 @@ atoi_positive:
                                 _errorFlag = true;
                                 continue;
                             }
-                            _ifLabelStack.push_back(_labelCounter);
+                            _conditionalMetadataStack.push_back({_labelCounter, false});
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
     movq {}(%rip), %rax
     cmpq {}(%rip), %rax
-    jne .Lendif_{}
+    jne .Lelse_{}
 )", tokens[1], tokens[3], _labelCounter);
                             } else {
                                 assemblyInstruction = std::format(R"(
     movl {}(%rip), %eax
     cmpl {}(%rip), %eax
-    jne .Lendif_{}
+    jne .Lelse_{}
 )", tokens[1], tokens[3], _labelCounter);
                             }
                             _assemblyCode.addInstructionToText(assemblyInstruction);
                             _labelCounter++;
+                            break;
+                        case InstructionType::ELSE:
+                            if (tokens.size() != 1) {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (_conditionalMetadataStack.empty()) {
+                                reportError("'else' without a matching 'if' at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (_conditionalMetadataStack.back().hasElse) {
+                                reportError("'if' block already has an 'else' at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            assemblyInstruction = std::format(R"(
+    jmp .Lendif_{}
+.Lelse_{}:
+)", _conditionalMetadataStack.back().labelId, _conditionalMetadataStack.back().labelId);
+                            _conditionalMetadataStack.back().hasElse = true;
+                            _assemblyCode.addInstructionToText(assemblyInstruction);
                             break;
                         case InstructionType::DONE:
                             if (tokens.size() != 1) {
@@ -519,15 +548,21 @@ atoi_positive:
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (_ifLabelStack.empty()) {
+                            if (_conditionalMetadataStack.empty()) {
                                 reportError("'done' without a matching 'if' at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
                             }
-                            assemblyInstruction = std::format(R"(
+                            if (_conditionalMetadataStack.back().hasElse) {
+                                assemblyInstruction = std::format(R"(
 .Lendif_{}:
-)", _ifLabelStack.back());
-                            _ifLabelStack.pop_back();
+)", _conditionalMetadataStack.back().labelId);
+                            } else {
+                                assemblyInstruction = std::format(R"(
+.Lelse_{}:
+)", _conditionalMetadataStack.back().labelId);
+                            }
+                            _conditionalMetadataStack.pop_back();
                             _assemblyCode.addInstructionToText(assemblyInstruction);
                             break;
                         case InstructionType::READ:
@@ -574,7 +609,7 @@ atoi_positive:
                     _errorFlag = true;
                 }
             }
-            if (!_ifLabelStack.empty()) {
+            if (!_conditionalMetadataStack.empty()) {
                 reportError("Unterminated 'if' block (missing 'done')");
                 _errorFlag = true;
                 return;
