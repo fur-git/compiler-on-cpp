@@ -843,7 +843,7 @@ RESERVED_atoi_BY_LANGUAGE_positive:
                             _assemblyCode.addInstructionToData(assemblyInstruction);
                             assemblyInstruction = std::format(R"(
     leaq debug_{}(%rip), %rax
-    call get_string_length
+    call RESERVED_get_string_BY_length_LANGUAGE
     movq %rcx, %rdx
     movq $1, %rax
     movq $1, %rdi
