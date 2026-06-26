@@ -400,10 +400,11 @@ Build and run:
 This is a teaching project, so the language is intentionally minimal and has a
 few sharp edges worth knowing:
 
-- **Variable name matching is substring-based.** A name is considered to
-  "exist" if it appears anywhere in the generated data section, so short names
-  that are substrings of others (or of keywords like `newline`) can collide.
-  Prefer distinct, multi-character variable names.
+- **Variable existence is checked by exact name.** Names are registered when
+  you declare them with `new`; the compiler tracks them in a dedicated set
+  rather than searching the generated `.data` section as text. Short names that
+  are substrings of other identifiers (for example `line` vs `newline`) no
+  longer cause false "already exists" or "does not exist" errors.
 - **Instruction detection is keyword-substring-based.** Avoid variable and
   function names that contain instruction keywords (`new`, `set`, `add`, `if`,
   `read`, `printString`, `function`, `execute`, `fdone`, `nothing`,

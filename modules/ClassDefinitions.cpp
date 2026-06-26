@@ -115,6 +115,7 @@ class Compiler {
         std::vector<ConditionalMetadata> _conditionalMetadataStack;
         std::vector<uint16_t> _functionStack;
         std::set<std::string> _definedFunctions;
+        std::set<std::string> _definedVariables;
         InstructionType getInstructionType(const std::string& instruction) {
             if (instruction.find("function") != std::string::npos) return InstructionType::FUNCTION;
             if (instruction.find("fdone") != std::string::npos) return InstructionType::FDONE;
@@ -145,7 +146,7 @@ class Compiler {
             return InstructionType::INVALID;
         }
         bool doesTheVariableExist(const std::string& variableName) {
-            return _assemblyCode.getAssemblyDataSection().find(variableName) != std::string::npos;
+            return _definedVariables.contains(variableName);
         }
         bool doesTheFunctionExist(const std::string& functionName) {
             return _definedFunctions.contains(functionName);
@@ -377,6 +378,7 @@ RESERVED_atoi_BY_LANGUAGE_positive:
 )", tokens[1]);
                             }
                             _assemblyCode.addInstructionToData(assemblyInstruction);
+                            _definedVariables.insert(tokens[1]);
                             break;
                         case InstructionType::SET:
                             if (tokens.size() != 3) {
