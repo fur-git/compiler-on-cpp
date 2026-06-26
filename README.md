@@ -21,7 +21,9 @@ source.txt  -->  compiler  -->  source.S  -->  as  -->  source.o  -->  ld  -->  
   are only emitted when the program actually uses `print` / `read`.
 - Labeled text output (`info`, `warning`, `error`, `debug`) and plain text output
   (`printString`) use a generated `get_string_length` routine. It is emitted when
-  the program uses any of those instructions or `print`.
+  the program uses any of those instructions or `print`. `warning` and `error`
+  write to standard error; `info`, `debug`, and `printString` write to standard
+  output.
 - The program entry point is `_start`, and execution ends with the Linux
   `exit` syscall.
 
@@ -91,8 +93,8 @@ ignored. There are no comments.
 | `done` | `done` | Close the most recently opened `if` block. |
 | `exit` | `exit X` | Terminate the program with exit code `X`. |
 | `info` | `info message…` | Print an informational line to standard output: `INFO: message…`. |
-| `warning` | `warning message…` | Print a warning line to standard output: `WARNING: message…`. |
-| `error` | `error message…` | Print an error line to standard output: `ERROR: message…`. |
+| `warning` | `warning message…` | Print a warning line to standard error: `WARNING: message…`. |
+| `error` | `error message…` | Print an error line to standard error: `ERROR: message…`. |
 | `debug` | `debug message…` | Print a debug line to standard output: `DEBUG: message…`. |
 
 ### Variables
@@ -162,9 +164,14 @@ required; a line with only `printString` is a compile error.
 ### Logging messages
 
 The `info`, `warning`, `error`, and `debug` instructions print a labeled line of
-text to standard output. Each instruction takes one or more words after the
-keyword; those words become the message body. The compiler adds the level
-prefix and a trailing newline automatically.
+text. Each instruction takes one or more words after the keyword; those words
+become the message body. The compiler adds the level prefix and a trailing
+newline automatically.
+
+`info` and `debug` write to **standard output**. `warning` and `error` write to
+**standard error**, so they can be separated from normal program output when
+redirecting streams (for example `./program > out.txt` keeps warnings and errors
+on the terminal).
 
 ```
 info This is an info!
@@ -177,10 +184,17 @@ Running the program above prints:
 
 ```
 INFO: This is an info!
-WARNING: This is a warning!
-ERROR: This is an error!
 DEBUG: This is a debug!
 ```
+
+to standard output, and:
+
+```
+WARNING: This is a warning!
+ERROR: This is an error!
+```
+
+to standard error.
 
 Multi-word messages are written as a single line:
 

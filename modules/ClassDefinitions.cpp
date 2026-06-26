@@ -681,7 +681,7 @@ atoi_positive:
     call get_string_length
     movq %rcx, %rdx
     movq $1, %rax
-    movq $1, %rdi
+    movq $2, %rdi
     leaq warning_{}(%rip), %rsi
     syscall
 )", _variableCounter, _variableCounter);
@@ -714,7 +714,7 @@ atoi_positive:
     call get_string_length
     movq %rcx, %rdx
     movq $1, %rax
-    movq $1, %rdi
+    movq $2, %rdi
     leaq error_{}(%rip), %rsi
     syscall
 )", _variableCounter, _variableCounter);
@@ -819,6 +819,7 @@ atoi_positive:
             if (system(std::format("ld {}.o -o {}", filenameWithoutExtension, filenameWithoutExtension).c_str()) != 0) {
                 reportError("Linker failed");
                 _errorFlag = true;
+                return;
             }
         }
 };
