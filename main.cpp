@@ -21,6 +21,7 @@ int main(int argc, char* argv[]) {
     Compiler compiler(sourceFile, is64Bits);
     compiler.compile();
     if (!compiler._errorFlag) {
+        Compiler::reportInfo("Successfully compiled");
         if (clearObjectFiles) {
             Compiler::reportInfo("Clearing object files...");
             system("rm -f *.o");

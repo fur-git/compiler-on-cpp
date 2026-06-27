@@ -94,10 +94,10 @@ ignored. There are no comments.
 | `print` | `print X` | Print `X` to standard output as a decimal number. |
 | `printString` | `printString message…` | Print a plain text message to standard output (no prefix or trailing newline). |
 | `newline` | `newline` | Print a single newline character. |
-| `add` | `add X Y` | `X = X + Y`. |
-| `subtract` | `subtract X Y` | `X = X - Y`. |
-| `multiply` | `multiply X Y` | `X = X * Y`. |
-| `divide` | `divide X Y` | `X = X / Y` (integer division). |
+| `add` | `add Y into X` | `X = X + Y`. |
+| `subtract` | `subtract Y from X` | `X = X - Y`. |
+| `multiply` | `multiply X by Y` | `X = X * Y`. |
+| `divide` | `divide X by Y` | `X = X / Y` (integer division). |
 | `if` | `if X equals to Y then do` | Run the block until `else do`/`done` only when `X == Y`. All keywords are required. |
 | `else` | `else do` | Begin the block that runs only when the matching `if` condition was false. Optional. |
 | `done` | `done` | Close the most recently opened `if` block. |
@@ -135,18 +135,29 @@ variable cannot share a name with a function, and vice versa.
 
 ### Arithmetic
 
-All arithmetic operates on two existing variables and stores the result back
-into the first operand:
+All arithmetic operates on two existing variables. Each instruction uses plain
+English word order — read it aloud and it matches the operation:
 
 ```
 new total
 new amount
 set total to be 100
 set amount to be 25
-add total amount        # total = 125
-subtract total amount   # total = 100
-multiply total amount   # total = 2500
+add amount into total       # total = 125
+subtract amount from total  # total = 100
+multiply total by amount    # total = 2500
+divide total by amount      # total = 100
 ```
+
+| Instruction | Form | Variable updated |
+| --- | --- | --- |
+| `add` | `add Y into X` | `X` (after `into`) |
+| `subtract` | `subtract Y from X` | `X` (after `from`) |
+| `multiply` | `multiply X by Y` | `X` (first operand) |
+| `divide` | `divide X by Y` | `X` (first operand / dividend) |
+
+Both operands must already exist. A typo in either variable name is a compile
+error.
 
 ### Input and output
 
@@ -322,7 +333,7 @@ if X equals to Y then do
     go to whileEnd
 done
 print X
-add X one
+add one into X
 go to whileLoop
 mark whileEnd
 ```
@@ -378,7 +389,7 @@ new x
 new y
 
 function calculate does
-    add x y
+    add y into x
 fdone
 
 read x
@@ -461,17 +472,20 @@ exit code
 ```
 
 If no `exit` runs, the program still terminates cleanly with exit code `0`
-(a default exit is appended automatically when no `exit` instruction is
-present in the source).
+(the compiler appends a default exit path that jumps to a shared
+`RESERVED_exit_BY_LANGUAGE` helper).
 
 ## Example program
 
-`exampleCode.txt` demonstrates a simple infinite loop with `mark` and `go to`:
+`exampleCode.txt` demonstrates a macro, a variable, and exiting with a code:
 
 ```
-mark loop
-printString 67
-go to loop
+#macro exitCode is 67
+
+new code
+set code to be exitCode
+
+exit code
 ```
 
 Build and run:
@@ -479,9 +493,8 @@ Build and run:
 ```bash
 ./compiler exampleCode.txt
 ./exampleCode
+echo $?    # prints 67
 ```
-
-The program prints `67` forever until you stop it.
 
 ### More complete example
 
@@ -496,7 +509,7 @@ new y
 function calculate does
     new temp
     set temp to be MAX
-    add x y
+    add y into x
     if x equals to temp then do
         printString The result equals to 100!
         newline
@@ -523,16 +536,13 @@ few sharp edges worth knowing:
   are substrings of other identifiers (for example `line` vs `newline`) no
   longer cause false "already exists" or "does not exist" errors.
 - **Instruction detection is keyword-substring-based.** Avoid variable and
-  function names that contain instruction keywords (`new`, `set`, `add`, `if`,
-  `read`, `printString`, `function`, `execute`, `fdone`, `nothing`, `mark`,
-  `go to`, `#macro`, `#compileTimeInfo`, `info`, `warning`, `error`, `debug`,
-  etc.). The compiler checks longer keywords such as `printString` and
-  `#compileTimeInfo` before shorter ones like `print` and `info` that they
-  contain. The same rule applies to text in `#compileTime*` messages — see
-  [Compile-time debugging](#compile-time-debugging).
-- **Arithmetic checks only the first operand.** Instructions like `add X Y`
-  verify that `X` exists but not `Y`. A typo in `Y` may pass compilation and
-  fail at assembly or link time instead.
+  function names that contain instruction keywords (`new`, `set`, `add`, `into`,
+  `from`, `by`, `if`, `read`, `printString`, `function`, `execute`, `fdone`,
+  `nothing`, `mark`, `go to`, `#macro`, `#compileTimeInfo`, `info`, `warning`,
+  `error`, `debug`, etc.). The compiler checks longer keywords such as
+  `printString` and `#compileTimeInfo` before shorter ones like `print` and
+  `info` that they contain. The same rule applies to text in `#compileTime*`
+  messages — see [Compile-time debugging](#compile-time-debugging).
 - **Functions have no parameters or locals.** All variables are global. A `new`
   inside a function creates another global variable, not a local one.
 - **`read` uses a single shared buffer.** Reading multiple values from a pipe

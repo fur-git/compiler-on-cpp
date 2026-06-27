@@ -162,6 +162,7 @@ class Compiler {
             _sourceCodeFile.close();
         }
         void compile(void) {
+            reportInfo("Compiling now...");
             uint32_t lineNumber = 0;
             std::string line;
             while (std::getline(_sourceCodeFile, line)) {
@@ -282,7 +283,7 @@ class Compiler {
                             }
                             break;
                         case InstructionType::ADD:
-                            if (tokens.size() != 3) {
+                            if (tokens.size() != 4 || tokens[2] != "into") {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
@@ -292,16 +293,21 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
+                            if (!doesTheVariableExist(tokens[3])) {
+                                reportError("Variable " + tokens[3] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
     movq {}(%rip), %rax
     addq %rax, {}(%rip)
-)", tokens[2], tokens[1]);
+)", tokens[1], tokens[3]);
                             } else {
                                 assemblyInstruction = std::format(R"(
     movl {}(%rip), %eax
     addl %eax, {}(%rip)
-)", tokens[2], tokens[1]);
+)", tokens[1], tokens[3]);
                             }
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -310,8 +316,13 @@ class Compiler {
                             }
                             break;
                         case InstructionType::SUBTRACT:
-                            if (tokens.size() != 3) {
+                            if (tokens.size() != 4 || tokens[2] != "from") {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[3])) {
+                                reportError("Variable " + tokens[3] + " does not exist");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -324,12 +335,12 @@ class Compiler {
                                 assemblyInstruction = std::format(R"(
     movq {}(%rip), %rax
     subq %rax, {}(%rip)
-)", tokens[2], tokens[1]);
+)", tokens[1], tokens[3]);
                             } else {
                                 assemblyInstruction = std::format(R"(
     movl {}(%rip), %eax
     subl %eax, {}(%rip)
-)", tokens[2], tokens[1]);
+)", tokens[1], tokens[3]);
                             }
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -338,13 +349,18 @@ class Compiler {
                             }
                             break;
                         case InstructionType::MULTIPLY:
-                            if (tokens.size() != 3) {
+                            if (tokens.size() != 4 || tokens[2] != "by") {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
                             }
                             if (!doesTheVariableExist(tokens[1])) {
                                 reportError("Variable " + tokens[1] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[3])) {
+                                reportError("Variable " + tokens[3] + " does not exist");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -354,14 +370,14 @@ class Compiler {
     movq {}(%rip), %rbx
     imulq %rax, %rbx
     movq %rbx, {}(%rip)
-)", tokens[2], tokens[1], tokens[1]);
+)", tokens[3], tokens[1], tokens[1]);
                             } else {
                                 assemblyInstruction = std::format(R"(
     movl {}(%rip), %eax
     movl {}(%rip), %ebx
     imull %eax, %ebx
     movl %ebx, {}(%rip)
-)", tokens[2], tokens[1], tokens[1]);
+)", tokens[3], tokens[1], tokens[1]);
                             }
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -370,13 +386,18 @@ class Compiler {
                             }
                             break;
                         case InstructionType::DIVIDE:
-                            if (tokens.size() != 3) {
+                            if (tokens.size() != 4 || tokens[2] != "by") {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
                             }
                             if (!doesTheVariableExist(tokens[1])) {
                                 reportError("Variable " + tokens[1] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[3])) {
+                                reportError("Variable " + tokens[3] + " does not exist");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -387,7 +408,7 @@ class Compiler {
     movq {}(%rip), %rbx
     idivq %rbx
     movq %rax, {}(%rip)
-)", tokens[1], tokens[2], tokens[1]);
+)", tokens[1], tokens[3], tokens[1]);
                             } else {
                                 assemblyInstruction = std::format(R"(
     movl {}(%rip), %eax
@@ -395,7 +416,7 @@ class Compiler {
     movl {}(%rip), %ebx
     idivl %ebx
     movl %eax, {}(%rip)
-)", tokens[1], tokens[2], tokens[1]);
+)", tokens[1], tokens[3], tokens[1]);
                             }
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -436,15 +457,13 @@ class Compiler {
                             }
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
-    movq $60, %rax
     movq {}(%rip), %rdi
-    syscall
+    jmp RESERVED_exit_BY_LANGUAGE
 )", tokens[1]);
                             } else {
                                 assemblyInstruction = std::format(R"(
-    movq $60, %rax
     movslq {}(%rip), %rdi
-    syscall
+    jmp RESERVED_exit_BY_LANGUAGE
 )", tokens[1]);
                             }
                             if (_isInAFunction) {
@@ -1155,6 +1174,13 @@ RESERVED_atoi_BY_LANGUAGE_positive:
 )";
                 _assemblyCode.addInstructionToData(newlineAssemblyCode);
             }
+            std::string exitFunctionAssemblyCode = R"(
+RESERVED_exit_BY_LANGUAGE:
+    movq $60, %rax
+    syscall
+
+)";
+            _assemblyCode.addInstructionToFunctions(exitFunctionAssemblyCode);
             if (!_conditionalMetadataStack.empty()) {
                 reportError("Unterminated 'if' block (missing 'done')");
                 _errorFlag = true;
@@ -1172,9 +1198,8 @@ RESERVED_atoi_BY_LANGUAGE_positive:
             }
             if (_errorFlag) { return; }
             std::string finalInstruction = R"(
-    movq $60, %rax
     xorq %rdi, %rdi
-    syscall
+    jmp RESERVED_exit_BY_LANGUAGE
 )";
             _assemblyCode.addInstructionToText(finalInstruction);
             _assemblyCode.writeToFile();

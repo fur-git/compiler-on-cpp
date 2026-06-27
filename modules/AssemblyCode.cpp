@@ -57,7 +57,7 @@ class AssemblyCode {
             << _assemblyBssSection.getAssemblyBssSection()
             << _assemblyFunctions.getAssemblyFunctions()
             << _assemblyTextSection.getAssemblyTextSection()
-            << std::endl; 
+            << std::flush;
         }
 };
 
