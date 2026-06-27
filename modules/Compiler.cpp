@@ -46,10 +46,17 @@ class Compiler {
             MACRO,
             MARK,
             GOTO,
+            NEWARRAY,
+            GETELEMENT,
+            SETELEMENT,
         };
         struct ConditionalMetadata {
             uint16_t labelId;
             bool hasElse;
+        };
+        struct ArrayMetadata {
+            std::string name;
+            uint16_t size;
         };
         std::ifstream _sourceCodeFile;
         AssemblyCode _assemblyCode;
@@ -70,6 +77,7 @@ class Compiler {
         std::vector<ConditionalMetadata> _conditionalMetadataStack;
         std::vector<uint16_t> _functionStack;
         std::vector<uint16_t> _compileTimeIfStack;
+        std::vector<ArrayMetadata> _definedArrays;
         std::map<std::string, std::string> _definedMacroVariables;
         std::set<std::string> _definedFunctions;
         std::set<std::string> _definedVariables;
@@ -80,6 +88,10 @@ class Compiler {
             if (instruction.find("#compileTimeWarning") != std::string::npos) return InstructionType::COMPILETIMEWARNING;
             if (instruction.find("#compileTimeError") != std::string::npos) return InstructionType::COMPILETIMEERROR;
             if (instruction.find("#compileTimeDebug") != std::string::npos) return InstructionType::COMPILETIMEDEBUG;
+            if (instruction.find("info") != std::string::npos) return InstructionType::INFO;
+            if (instruction.find("warning") != std::string::npos) return InstructionType::WARNING;
+            if (instruction.find("error") != std::string::npos) return InstructionType::ERROR;
+            if (instruction.find("debug") != std::string::npos) return InstructionType::DEBUG;
             if (instruction.find("#if") != std::string::npos) return InstructionType::COMPILETIMEIF;
             if (instruction.find("#done") != std::string::npos) return InstructionType::COMPILETIMEDONE;
             if (instruction.find("function") != std::string::npos) return InstructionType::FUNCTION;
@@ -88,6 +100,9 @@ class Compiler {
             if (instruction.find("printString") != std::string::npos) return InstructionType::PRINTSTRING;
             if (instruction.find("print") != std::string::npos) return InstructionType::PRINT;
             if (instruction.find("newline") != std::string::npos) return InstructionType::NEWLINE;
+            if (instruction.find("new array") != std::string::npos) return InstructionType::NEWARRAY;
+            if (instruction.find("get element") != std::string::npos) return InstructionType::GETELEMENT;
+            if (instruction.find("set element") != std::string::npos) return InstructionType::SETELEMENT;
             if (instruction.find("new") != std::string::npos) return InstructionType::NEW;
             if (instruction.find("set") != std::string::npos) return InstructionType::SET;
             if (instruction.find("add") != std::string::npos) return InstructionType::ADD;
@@ -99,14 +114,18 @@ class Compiler {
             if (instruction.find("else") != std::string::npos) return InstructionType::ELSE;
             if (instruction.find("if") != std::string::npos) return InstructionType::IF;
             if (instruction.find("read") != std::string::npos) return InstructionType::READ;
-            if (instruction.find("info") != std::string::npos) return InstructionType::INFO;
-            if (instruction.find("warning") != std::string::npos) return InstructionType::WARNING;
-            if (instruction.find("error") != std::string::npos) return InstructionType::ERROR;
-            if (instruction.find("debug") != std::string::npos) return InstructionType::DEBUG;
             if (instruction.find("nothing") != std::string::npos) return InstructionType::NOTHING;
             if (instruction.find("mark") != std::string::npos) return InstructionType::MARK;
             if (instruction.find("go to") != std::string::npos) return InstructionType::GOTO;
             return InstructionType::INVALID;
+        }
+        bool doesTheArrayExist(const std::string& arrayName) {
+            for (const ArrayMetadata& arrayMetadata : _definedArrays) {
+                if (arrayMetadata.name == arrayName) {
+                    return true;
+                }
+            }
+            return false;
         }
         bool doesTheVariableExist(const std::string& variableName) {
             return _definedVariables.contains(variableName);
@@ -124,6 +143,18 @@ class Compiler {
                 }
             }
             return true;
+        }
+        uint16_t getArrayElementCount(const ArrayMetadata& arrayMetadata) {
+            if (_is64Bits) { return arrayMetadata.size / 8; }
+            else { return arrayMetadata.size / 4; }
+        }
+        ArrayMetadata getArrayMetadata(const std::string& arrayName) {
+            for (const ArrayMetadata& arrayMetadata : _definedArrays) {
+                if (arrayMetadata.name == arrayName) {
+                    return arrayMetadata;
+                }
+            }
+            return { "", 0 };
         }
     public:
         bool _errorFlag;
@@ -152,6 +183,7 @@ class Compiler {
             _definedMacroVariables.clear();
             _compileTimeIfStack.clear();
             _definedMarks.clear();
+            _definedArrays.clear();
             if (!_sourceCodeFile.is_open()) {
                 reportError("Failed to open source code file: " + filename);
                 return;
@@ -164,6 +196,8 @@ class Compiler {
         void compile(void) {
             reportInfo("Compiling now...");
             uint32_t lineNumber = 0;
+            uint16_t arraySize = 0;
+            uint16_t elementCount = 0;
             std::string line;
             while (std::getline(_sourceCodeFile, line)) {
                 lineNumber++;
@@ -238,6 +272,11 @@ class Compiler {
                             }
                             if (doesTheFunctionExist(tokens[1])) {
                                 reportError("Function with the same name as the variable already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheArrayExist(tokens[1])) {
+                                reportError("Array " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -970,6 +1009,11 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
+                            if (doesTheArrayExist(tokens[3])) {
+                                reportError("Array with the same name as the macro is already defined");
+                                _errorFlag = true;
+                                continue;
+                            }
                             if (!isANumber(tokens[3])) {
                                 reportError("Macro value is not a number");
                                 _errorFlag = true;
@@ -1057,6 +1101,175 @@ class Compiler {
     jmp {}
 )", tokens[2]);
                             _assemblyCode.addInstructionToText(assemblyInstruction);
+                            break;
+                        case InstructionType::NEWARRAY:
+                            if (tokens.size() != 6 ||
+                                tokens[0] != "new" ||
+                                tokens[1] != "array" ||
+                                tokens[3] != "with" ||
+                                tokens[5] != "elements") {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheArrayExist(tokens[2])) {
+                                reportError("Array " + tokens[2] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!isANumber(tokens[4])) {
+                                reportError("Array size is not a number");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (_is64Bits) { arraySize = std::stoi(tokens[4]) * 8; }
+                            else { arraySize = std::stoi(tokens[4]) * 4; }
+                            assemblyInstruction = std::format(R"(
+    {}: .zero {}
+)", tokens[2], arraySize);
+                            _assemblyCode.addInstructionToData(assemblyInstruction);
+                            _definedArrays.push_back({ tokens[2], arraySize });
+                            break;
+                        case InstructionType::GETELEMENT:
+                            if (tokens.size() != 10 ||
+                                tokens[0] != "get" ||
+                                tokens[1] != "element" ||
+                                tokens[3] != "from" ||
+                                tokens[4] != "array" ||
+                                tokens[6] != "and" ||
+                                tokens[7] != "put" ||
+                                tokens[8] != "into") {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheArrayExist(tokens[5])) {
+                                reportError("Array " + tokens[5] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[9])) {
+                                reportError("Variable " + tokens[9] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[2])) {
+                                reportError("Variable " + tokens[2] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            elementCount = getArrayElementCount(getArrayMetadata(tokens[5]));
+                            if (_is64Bits) {
+                                assemblyInstruction = std::format(R"(
+    movq {}(%rip), %rcx
+    cmpq $1, %rcx
+    jl .Larray_oob_{}
+    cmpq ${}, %rcx
+    jg .Larray_oob_{}
+    decq %rcx
+    leaq {}(%rip), %rax
+    movq (%rax,%rcx,8), %rdx
+    movq %rdx, {}(%rip)
+    jmp .Larray_done_{}
+.Larray_oob_{}:
+    movq $1, %rdi
+    jmp RESERVED_exit_BY_LANGUAGE
+.Larray_done_{}:
+)", tokens[2], _labelCounter, elementCount, _labelCounter, tokens[5], tokens[9], _labelCounter, _labelCounter, _labelCounter);
+                            } else {
+                                assemblyInstruction = std::format(R"(
+    movslq {}(%rip), %rcx
+    cmpq $1, %rcx
+    jl .Larray_oob_{}
+    cmpq ${}, %rcx
+    jg .Larray_oob_{}
+    decq %rcx
+    leaq {}(%rip), %rax
+    movl (%rax,%rcx,4), %edx
+    movl %edx, {}(%rip)
+    jmp .Larray_done_{}
+.Larray_oob_{}:
+    movq $1, %rdi
+    jmp RESERVED_exit_BY_LANGUAGE
+.Larray_done_{}:
+)", tokens[2], _labelCounter, elementCount, _labelCounter, tokens[5], tokens[9], _labelCounter, _labelCounter, _labelCounter);
+                            }
+                            _labelCounter++;
+                            if (_isInAFunction) {
+                                _assemblyCode.addInstructionToFunctions(assemblyInstruction);
+                            } else {
+                                _assemblyCode.addInstructionToText(assemblyInstruction);
+                            }
+                            break;
+                        case InstructionType::SETELEMENT:
+                            if (tokens.size() != 9 ||
+                                tokens[0] != "set" ||
+                                tokens[1] != "element" ||
+                                tokens[3] != "from" ||
+                                tokens[4] != "array" ||
+                                tokens[6] != "to" ||
+                                tokens[7] != "be") {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheArrayExist(tokens[5])) {
+                                reportError("Array " + tokens[5] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[8])) {
+                                reportError("Variable " + tokens[8] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheVariableExist(tokens[2])) {
+                                reportError("Variable " + tokens[2] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            elementCount = getArrayElementCount(getArrayMetadata(tokens[5]));
+                            if (_is64Bits) {
+                                assemblyInstruction = std::format(R"(
+    movq {}(%rip), %rcx
+    cmpq $1, %rcx
+    jl .Larray_oob_{}
+    cmpq ${}, %rcx
+    jg .Larray_oob_{}
+    decq %rcx
+    leaq {}(%rip), %rax
+    movq {}(%rip), %rbx
+    movq %rbx, (%rax,%rcx,8)
+    jmp .Larray_done_{}
+.Larray_oob_{}:
+    movq $1, %rdi
+    jmp RESERVED_exit_BY_LANGUAGE
+.Larray_done_{}:
+)", tokens[2], _labelCounter, elementCount, _labelCounter, tokens[5], tokens[8], _labelCounter, _labelCounter, _labelCounter);
+                            } else {
+                                assemblyInstruction = std::format(R"(
+    movslq {}(%rip), %rcx
+    cmpq $1, %rcx
+    jl .Larray_oob_{}
+    cmpq ${}, %rcx
+    jg .Larray_oob_{}
+    decq %rcx
+    leaq {}(%rip), %rax
+    movl {}(%rip), %ebx
+    movl %ebx, (%rax,%rcx,4)
+    jmp .Larray_done_{}
+.Larray_oob_{}:
+    movq $1, %rdi
+    jmp RESERVED_exit_BY_LANGUAGE
+.Larray_done_{}:
+)", tokens[2], _labelCounter, elementCount, _labelCounter, tokens[5], tokens[8], _labelCounter, _labelCounter, _labelCounter);
+                            }
+                            _labelCounter++;
+                            if (_isInAFunction) {
+                                _assemblyCode.addInstructionToFunctions(assemblyInstruction);
+                            } else {
+                                _assemblyCode.addInstructionToText(assemblyInstruction);
+                            }
                             break;
                         case InstructionType::INVALID:
                             reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));

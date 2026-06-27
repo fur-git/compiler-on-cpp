@@ -16,6 +16,11 @@ source.txt  -->  compiler  -->  source.S  -->  as  -->  source.o  -->  ld  -->  
 
 - Each program variable becomes a global in the `.data` section (a `.quad` in
   64-bit mode, a `.long` in 32-bit mode).
+- **Arrays** are declared with `new array` and stored as a contiguous block of
+  zero-initialized integers in `.data`. Elements are accessed with
+  `get element` and `set element`. Array indices are **1-based** (the first
+  element is index `1`). The index operand is a **variable**, not a literal.
+  Out-of-bounds access at run time terminates the program with exit code `1`.
 - Integer printing is handled by a generated `RESERVED_itoa_BY_LANGUAGE` routine;
   reading integers from standard input is handled by a generated
   `RESERVED_atoi_BY_LANGUAGE` routine. These helpers are only emitted when the
@@ -57,16 +62,16 @@ g++ -std=c++20 main.cpp -o compiler
 ./compiler [flags] <source-file>
 ```
 
-Compiling `exampleCode.txt` produces three files next to it:
+Compiling `test.txt` produces three files next to it:
 
-- `exampleCode.S` — generated assembly
-- `exampleCode.o` — object file
-- `exampleCode`   — the final executable
+- `test.S` — generated assembly
+- `test.o` — object file
+- `test`   — the final executable
 
 Run it with:
 
 ```bash
-./exampleCode
+./test
 ```
 
 ### Compiler flags
@@ -89,6 +94,9 @@ ignored. There are no comments.
 | Instruction | Form | Meaning |
 | --- | --- | --- |
 | `new` | `new X` | Declare integer variable `X`, initialized to `0`. |
+| `new array` | `new array A with N elements` | Declare array `A` with `N` integer slots, all initialized to `0`. |
+| `get element` | `get element I from array A and put into X` | Copy array slot `I` into variable `X`. |
+| `set element` | `set element I from array A to be X` | Copy variable `X` into array slot `I`. |
 | `set` | `set X to be N` | Assign integer literal `N` (or a macro name) to `X`. |
 | `read` | `read X` | Read an integer from standard input into `X`. |
 | `print` | `print X` | Print `X` to standard output as a decimal number. |
@@ -131,7 +139,72 @@ set counter to be 10
 
 Variables are global and live for the whole program. Re-declaring an existing
 variable, or using one that has not been declared, is a compile error. A
-variable cannot share a name with a function, and vice versa.
+variable cannot share a name with a function or an array, and vice versa.
+
+### Arrays
+
+Declare an array before using it:
+
+```
+new array nums with 5 elements
+new i
+new x
+
+set i to be 1
+set x to be 42
+set element i from array nums to be x
+get element i from array nums and put into x
+```
+
+Rules:
+
+- Array names follow the same naming rules as variables and **cannot** share a
+  name with a variable, function, or another array.
+- The size (`N` in `with N elements`) must be a numeric literal. Array size is
+  fixed at compile time; arrays cannot grow at run time.
+- Indices are **1-based**: the first slot is index `1`, the last slot is index
+  `N`. Index `0` or any index greater than `N` is out of bounds.
+- The index (`I`) must be an existing **variable**, not a numeric literal.
+- The value (`X`) in `get element` / `set element` must be an existing variable.
+- Out-of-bounds access is checked at **run time**. The program exits with code
+  `1` if an index is invalid.
+- Arrays are global, like variables. Function bodies and the main program share
+  the same arrays.
+
+**Loop over an array** (with `mark` / `go to`):
+
+```
+new array data with 3 elements
+new i
+new x
+
+set i to be 1
+set x to be 100
+set element i from array data to be x
+
+set i to be 2
+set x to be 200
+set element i from array data to be x
+
+set i to be 1
+
+mark eachElement
+if i equals to 4 then do
+    go to done
+done
+
+get element i from array data and put into x
+print x
+newline
+
+add one into i
+go to eachElement
+
+mark done
+```
+
+Because `if` only supports `equals to`, a counter variable (`i`) is the usual
+way to walk array indices in a loop.
 
 ### Arithmetic
 
@@ -411,8 +484,8 @@ Rules:
 - `execute NAME` emits a `call` to the function. The function must already be
   defined earlier in the source file.
 - Any instruction that can appear in the main program (including `if`, `exit`,
-  `print`, and so on) can appear inside a function body, **except** `mark` and
-  `go to`.
+  `print`, `get element`, `set element`, and so on) can appear inside a function
+  body, **except** `mark` and `go to`.
 
 ### No-op (`nothing`)
 
@@ -477,7 +550,89 @@ If no `exit` runs, the program still terminates cleanly with exit code `0`
 
 ## Example program
 
-`exampleCode.txt` demonstrates a macro, a variable, and exiting with a code:
+Copy the program below into a file (for example `test.txt`) to try out macros,
+arrays, functions, marks, and conditionals. It prints ten Fibonacci-style sums
+and exits with code `0`:
+
+```
+#macro ITERATIONS is 10
+
+new tmp1
+new tmp2
+new counter
+new finishValue
+new sum
+new i
+new zero
+
+set tmp1 to be 0
+set tmp2 to be 1
+set counter to be 0
+set finishValue to be ITERATIONS
+set sum to be 0
+set i to be 1
+set zero to be 0
+
+function finish does
+    exit zero
+fdone
+
+new array fibonacci with 2 elements
+set element i from array fibonacci to be tmp1
+set i to be 2
+set element i from array fibonacci to be tmp2
+
+mark loop
+
+if counter equals to finishValue then do
+    execute finish
+done
+
+set i to be 1
+get element i from array fibonacci and put into tmp1
+set i to be 2
+get element i from array fibonacci and put into tmp2
+get element i from array fibonacci and put into sum
+
+add tmp1 into sum
+add tmp2 into sum
+
+get element i from array fibonacci and put into tmp2
+set i to be 1
+set element i from array fibonacci to be tmp2
+set i to be 2
+set element i from array fibonacci to be sum
+
+print sum
+newline
+
+set i to be 1
+
+add i into counter
+go to loop
+```
+
+```bash
+./compiler test.txt
+./test
+```
+
+Sample output:
+
+```
+2
+5
+12
+29
+70
+169
+408
+985
+2378
+5741
+```
+
+A minimal program that only exits with a code (save as `exitDemo.txt`):
 
 ```
 #macro exitCode is 67
@@ -488,11 +643,9 @@ set code to be exitCode
 exit code
 ```
 
-Build and run:
-
 ```bash
-./compiler exampleCode.txt
-./exampleCode
+./compiler exitDemo.txt
+./exitDemo
 echo $?    # prints 67
 ```
 
@@ -536,13 +689,20 @@ few sharp edges worth knowing:
   are substrings of other identifiers (for example `line` vs `newline`) no
   longer cause false "already exists" or "does not exist" errors.
 - **Instruction detection is keyword-substring-based.** Avoid variable and
-  function names that contain instruction keywords (`new`, `set`, `add`, `into`,
-  `from`, `by`, `if`, `read`, `printString`, `function`, `execute`, `fdone`,
-  `nothing`, `mark`, `go to`, `#macro`, `#compileTimeInfo`, `info`, `warning`,
-  `error`, `debug`, etc.). The compiler checks longer keywords such as
-  `printString` and `#compileTimeInfo` before shorter ones like `print` and
-  `info` that they contain. The same rule applies to text in `#compileTime*`
-  messages — see [Compile-time debugging](#compile-time-debugging).
+  function names that contain instruction keywords (`new`, `new array`, `set`,
+  `set element`, `get element`, `add`, `into`, `from`, `by`, `if`, `read`,
+  `printString`, `function`, `execute`, `fdone`, `nothing`, `mark`, `go to`,
+  `#macro`, `#compileTimeInfo`, `info`, `warning`, `error`, `debug`, etc.).
+  The compiler checks longer keywords such as `new array`, `get element`,
+  `set element`, and `#compileTimeInfo` before shorter ones like `new`, `set`,
+  `get`, and `info` that they contain. The same rule applies to text in
+  `#compileTime*` messages — see [Compile-time debugging](#compile-time-debugging).
+- **Arrays have a fixed compile-time size.** There is no heap, dynamic growth,
+  or resize. Total memory (variables plus all array slots) is bounded when the
+  program is compiled.
+- **Array indices are 1-based variables.** You cannot write a literal index
+  directly in `get element` or `set element`; use a variable (for example
+  `set i to be 1` first).
 - **Functions have no parameters or locals.** All variables are global. A `new`
   inside a function creates another global variable, not a local one.
 - **`read` uses a single shared buffer.** Reading multiple values from a pipe
@@ -559,6 +719,8 @@ few sharp edges worth knowing:
   stack, so the compiler rejects them there.
 - **Marks must be defined before use.** There is no forward-reference pass; a
   `go to` target must already have been seen earlier in the source file.
+- **`exit` requires a variable or macro name**, not a bare numeric literal. Use
+  `set code to be 0` and then `exit code`.
 - **Unclosed blocks are compile errors.** An `if` without a matching `done`, a
   `#if` without a matching `#done`, or a `function` without a matching `fdone`,
   is rejected after the full source file has been read.
