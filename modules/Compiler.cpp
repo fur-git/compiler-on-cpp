@@ -52,10 +52,20 @@ class Compiler {
             NEWARRAY,
             GETELEMENT,
             SETELEMENT,
+            EDITMACRO,
+            TERMNINATECOMPILATION,
+            MACROFUNCTION,
+            MACROFDONE,
+            MACROEXECUTE,
         };
         struct ConditionalMetadata {
             uint16_t labelId;
             bool hasElse;
+            bool isEmpty;
+        };
+        struct FunctionMetadata {
+            uint16_t id;
+            bool isEmpty;
         };
         struct ArrayMetadata {
             std::string name;
@@ -64,6 +74,7 @@ class Compiler {
         std::ifstream _sourceCodeFile;
         AssemblyCode _assemblyCode;
         std::string _filename;
+        std::string _currentMacroFunctionName;
         bool _is64Bits;
         uint16_t _labelCounter;
         uint16_t _variableCounter;
@@ -77,11 +88,16 @@ class Compiler {
         bool _needsItoa;
         bool _needsAtoi;
         bool _needsNewline;
+        bool _needsRead;
+        bool _needsPrint;
+        bool _isInsideAMacroFunction;
+        bool _isExecutingAMacroFunction;
         std::vector<ConditionalMetadata> _conditionalMetadataStack;
-        std::vector<uint16_t> _functionStack;
+        std::vector<FunctionMetadata> _functionStack;
         std::vector<uint16_t> _compileTimeIfStack;
         std::vector<ArrayMetadata> _definedArrays;
         std::map<std::string, std::string> _definedMacroVariables;
+        std::map<std::string, std::vector<std::string>> _definedMacroFunctions;
         std::set<std::string> _definedFunctions;
         std::set<std::string> _definedVariables;
         std::set<std::string> _definedMarks;
@@ -122,6 +138,11 @@ class Compiler {
             if (tokensVector[0] == "#compileTimeWarning") return InstructionType::COMPILETIMEWARNING;
             if (tokensVector[0] == "#compileTimeError") return InstructionType::COMPILETIMEERROR;
             if (tokensVector[0] == "#compileTimeDebug") return InstructionType::COMPILETIMEDEBUG;
+            if (tokensVector[0] == "#editMacro") return InstructionType::EDITMACRO;
+            if (tokensVector[0] == "#terminateCompilation") return InstructionType::TERMNINATECOMPILATION;
+            if (tokensVector[0] == "#macroFunction") return InstructionType::MACROFUNCTION;
+            if (tokensVector[0] == "#fdone") return InstructionType::MACROFDONE;
+            if (tokensVector[0] == "#execute") return InstructionType::MACROEXECUTE;
             if (tokensVector[0] == "info") return InstructionType::INFO;
             if (tokensVector[0] == "warning") return InstructionType::WARNING;
             if (tokensVector[0] == "error") return InstructionType::ERROR;
@@ -166,6 +187,12 @@ class Compiler {
         bool doesTheMacroExist(const std::string& macroName) {
             return _definedMacroVariables.contains(macroName);
         }
+        bool doesTheMacroFunctionExist(const std::string& macroFunctionName) {
+            return _definedMacroFunctions.contains(macroFunctionName);
+        }
+        bool doesTheMarkExist(const std::string& markName) {
+            return _definedMarks.contains(markName);
+        }
         bool isANumber(const std::string& string) {
             for (const char& c : string) {
                 if (c < '0' || c > '9') {
@@ -188,6 +215,7 @@ class Compiler {
         }
     public:
         bool _errorFlag;
+        bool _terminateCompilationFlag;
         static void reportError(const std::string& message) { std::cerr << "ERROR: " << message << std::endl; }
         static void reportWarning(const std::string& message) { std::cerr << "WARNING: " << message << std::endl; }
         static void reportInfo(const std::string& message) { std::cout << "INFO: " << message << std::endl; }
@@ -196,18 +224,23 @@ class Compiler {
             _filename = filename;
             _sourceCodeFile.open(filename);
             _errorFlag = false;
+            _terminateCompilationFlag = false;
             _is64Bits = is64Bits;
             _labelCounter = 0;
             _variableCounter = 0;
             _functionCounter = 0;
             _conditionalCounter = 0;
             _isInAFunction = false;
+            _isExecutingAMacroFunction = false;
             _isSkippingCode = false;
             _needsBuffer = false;
             _needsGetStringLength = false;
             _needsItoa = false;
             _needsAtoi = false;
             _needsNewline = false;
+            _needsRead = false;
+            _needsPrint = false;
+            _isInsideAMacroFunction = false;
             _definedFunctions.clear();
             _definedVariables.clear();
             _definedMacroVariables.clear();
@@ -229,17 +262,40 @@ class Compiler {
             uint16_t arraySize = 0;
             uint16_t elementCount = 0;
             std::string line;
-            while (std::getline(_sourceCodeFile, line)) {
+            while (!_sourceCodeFile.eof()) {
+                if (_isExecutingAMacroFunction) {
+                    if (_definedMacroFunctions[_currentMacroFunctionName].empty()) {
+                        _isExecutingAMacroFunction = false;
+                        continue;
+                    }
+                    line = _definedMacroFunctions[_currentMacroFunctionName].front();
+                    _definedMacroFunctions[_currentMacroFunctionName].erase(_definedMacroFunctions[_currentMacroFunctionName].begin());
+                } else {
+                    std::getline(_sourceCodeFile, line);
+                }
+                if (_errorFlag || _terminateCompilationFlag) { return; }
                 lineNumber++;
-                if (_errorFlag) { return; }
                 if (line.empty()) { continue; }
                 std::vector<std::string> tokens;
                 std::stringstream ss(line);
                 std::string token;
                 std::string variableName;
                 while (ss >> token) { tokens.push_back(token); }
+                if (tokens.empty()) { continue; }
                 InstructionType instructionType = getInstructionType(tokens);
                 if (_isSkippingCode && instructionType != InstructionType::COMPILETIMEDONE) { continue; }
+                if (_isInsideAMacroFunction && instructionType != InstructionType::MACROFDONE) {
+                    _definedMacroFunctions[_currentMacroFunctionName].push_back(line);
+                    continue;
+                }
+                if (!_conditionalMetadataStack.empty() &&
+                    instructionType != InstructionType::DONE &&
+                    instructionType != InstructionType::ELSE) {
+                    _conditionalMetadataStack.back().isEmpty = false;
+                }
+                if (!_functionStack.empty() && instructionType != InstructionType::FDONE) {
+                    _functionStack.back().isEmpty = false;
+                }
                 try {
                     std::string assemblyInstruction;
                     std::string endMessage;
@@ -248,6 +304,7 @@ class Compiler {
                             _needsBuffer = true;
                             _needsItoa = true;
                             _needsGetStringLength = true;
+                            _needsPrint = true;
                             if (tokens.size() != 2) {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
@@ -265,10 +322,9 @@ class Compiler {
     leaq buffer(%rip), %rax
     call RESERVED_get_string_BY_length_LANGUAGE
     movq %rcx, %rdx
-    movq $1, %rax
     movq $1, %rdi
     leaq buffer(%rip), %rsi
-    syscall
+    call RESERVED_print_BY_LANGUAGE
 )", tokens[1]);
                             } else {
                                 assemblyInstruction = std::format(R"(
@@ -277,10 +333,9 @@ class Compiler {
     leaq buffer(%rip), %rax
     call RESERVED_get_string_BY_length_LANGUAGE
     movq %rcx, %rdx
-    movq $1, %rax
     movq $1, %rdi
     leaq buffer(%rip), %rsi
-    syscall
+    call RESERVED_print_BY_LANGUAGE
 )", tokens[1]);
                             }
                             if (_isInAFunction) {
@@ -301,12 +356,27 @@ class Compiler {
                                 continue;
                             }
                             if (doesTheFunctionExist(tokens[1])) {
-                                reportError("Function with the same name as the variable already exists");
+                                reportError("Function " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroExist(tokens[1])) {
+                                reportError("Macro " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroFunctionExist(tokens[1])) {
+                                reportError("Macro function " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
                             if (doesTheArrayExist(tokens[1])) {
                                 reportError("Array " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMarkExist(tokens[1])) {
+                                reportError("Mark " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -352,7 +422,7 @@ class Compiler {
                             }
                             break;
                         case InstructionType::ADD:
-                            if (tokens.size() != 4 || tokens[2] != "into") {
+                            if (tokens.size() != 4 || tokens[2] != "to") {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
@@ -495,17 +565,17 @@ class Compiler {
                             break;
                         case InstructionType::NEWLINE:
                             _needsNewline = true;
+                            _needsPrint = true;
                             if (tokens.size() != 1) {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
                             }
                             assemblyInstruction = R"(
-    movq $1, %rax
     movq $1, %rdi
-    leaq newline(%rip), %rsi
     movq $1, %rdx
-    syscall
+    leaq newline(%rip), %rsi
+    call RESERVED_print_BY_LANGUAGE
 )";
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -561,7 +631,7 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            _conditionalMetadataStack.push_back({_labelCounter, false});
+                            _conditionalMetadataStack.push_back({_labelCounter, false, true});
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
     movq {}(%rip), %rax
@@ -603,7 +673,7 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            _conditionalMetadataStack.push_back({_labelCounter, false});
+                            _conditionalMetadataStack.push_back({_labelCounter, false, true});
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
     movq {}(%rip), %rax
@@ -645,7 +715,7 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            _conditionalMetadataStack.push_back({_labelCounter, false});
+                            _conditionalMetadataStack.push_back({_labelCounter, false, true});
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
     movq {}(%rip), %rax
@@ -682,6 +752,12 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
+                            if (_conditionalMetadataStack.back().isEmpty) {
+                                reportError("'if' block cannot be empty (use 'nothing') at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            _conditionalMetadataStack.back().isEmpty = true;
                             assemblyInstruction = std::format(R"(
     jmp .Lendif_{}
 
@@ -705,6 +781,11 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
+                            if (_conditionalMetadataStack.back().isEmpty) {
+                                reportError("'if' block cannot be empty (use 'nothing') at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
                             if (_conditionalMetadataStack.back().hasElse) {
                                 assemblyInstruction = std::format(R"(
 .Lendif_{}:
@@ -724,6 +805,7 @@ class Compiler {
                         case InstructionType::READ:
                             _needsBuffer = true;
                             _needsAtoi = true;
+                            _needsRead = true;
                             if (tokens.size() != 2) {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
@@ -736,21 +818,17 @@ class Compiler {
                             }
                             if (_is64Bits) {
                                 assemblyInstruction = std::format(R"(
-    movq $0, %rax
-    movq $0, %rdi
     leaq buffer(%rip), %rsi
     movq $33, %rdx
-    syscall
+    call RESERVED_read_BY_LANGUAGE
     call RESERVED_atoi_BY_LANGUAGE
     movq %rax, {}(%rip)
 )", tokens[1]);
                             } else {
                                 assemblyInstruction = std::format(R"(
-    movq $0, %rax
-    movq $0, %rdi
     leaq buffer(%rip), %rsi
     movq $33, %rdx
-    syscall
+    call RESERVED_read_BY_LANGUAGE
     call RESERVED_atoi_BY_LANGUAGE
     movl %eax, {}(%rip)
 )", tokens[1]);
@@ -763,6 +841,7 @@ class Compiler {
                             break;
                         case InstructionType::INFO:
                             _needsGetStringLength = true;
+                            _needsPrint = true;
                             if (tokens.size() == 1) {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
@@ -787,10 +866,9 @@ class Compiler {
     leaq info_{}(%rip), %rax
     call RESERVED_get_string_BY_length_LANGUAGE
     movq %rcx, %rdx
-    movq $1, %rax
     movq $1, %rdi
     leaq info_{}(%rip), %rsi
-    syscall
+    call RESERVED_print_BY_LANGUAGE
 )", _variableCounter, _variableCounter);
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -801,6 +879,7 @@ class Compiler {
                             break;
                         case InstructionType::WARNING:
                             _needsGetStringLength = true;
+                            _needsPrint = true;
                             if (tokens.size() == 1) {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
@@ -825,10 +904,9 @@ class Compiler {
     leaq warning_{}(%rip), %rax
     call RESERVED_get_string_BY_length_LANGUAGE
     movq %rcx, %rdx
-    movq $1, %rax
     movq $2, %rdi
     leaq warning_{}(%rip), %rsi
-    syscall
+    call RESERVED_print_BY_LANGUAGE
 )", _variableCounter, _variableCounter);
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -839,6 +917,7 @@ class Compiler {
                             break;
                         case InstructionType::ERROR:
                             _needsGetStringLength = true;
+                            _needsPrint = true;
                             if (tokens.size() == 1) {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
@@ -863,10 +942,9 @@ class Compiler {
     leaq error_{}(%rip), %rax
     call RESERVED_get_string_BY_length_LANGUAGE
     movq %rcx, %rdx
-    movq $1, %rax
     movq $2, %rdi
     leaq error_{}(%rip), %rsi
-    syscall
+    call RESERVED_print_BY_LANGUAGE
 )", _variableCounter, _variableCounter);
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -901,10 +979,9 @@ class Compiler {
     leaq debug_{}(%rip), %rax
     call RESERVED_get_string_BY_length_LANGUAGE
     movq %rcx, %rdx
-    movq $1, %rax
     movq $1, %rdi
     leaq debug_{}(%rip), %rsi
-    syscall
+    call RESERVED_print_BY_LANGUAGE
 )", _variableCounter, _variableCounter);
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -915,6 +992,7 @@ class Compiler {
                             break;
                         case InstructionType::PRINTSTRING:
                             _needsGetStringLength = true;
+                            _needsPrint = true;
                             if (tokens.size() == 1) {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
@@ -939,10 +1017,9 @@ class Compiler {
     leaq string_{}(%rip), %rax
     call RESERVED_get_string_BY_length_LANGUAGE
     movq %rcx, %rdx
-    movq $1, %rax
     movq $1, %rdi
     leaq string_{}(%rip), %rsi
-    syscall
+    call RESERVED_print_BY_LANGUAGE
 )", _variableCounter, _variableCounter);
                             if (_isInAFunction) {
                                 _assemblyCode.addInstructionToFunctions(assemblyInstruction);
@@ -978,7 +1055,27 @@ class Compiler {
                                 continue;
                             }
                             if (doesTheVariableExist(tokens[1])) {
-                                reportError("Variable with the same name as the function already exists");
+                                reportError("Variable " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroExist(tokens[1])) {
+                                reportError("Macro " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroFunctionExist(tokens[1])) {
+                                reportError("Macro function " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheArrayExist(tokens[1])) {
+                                reportError("Array " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMarkExist(tokens[1])) {
+                                reportError("Mark " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -993,7 +1090,7 @@ class Compiler {
                             _assemblyCode.addInstructionToFunctions(assemblyInstruction);
                             _functionCounter++;
                             _isInAFunction = true;
-                            _functionStack.push_back(_functionCounter);
+                            _functionStack.push_back({_functionCounter, true});
                             _definedFunctions.insert(tokens[1]);
                             break;
                         case InstructionType::EXECUTE:
@@ -1024,6 +1121,11 @@ class Compiler {
                             }
                             if (!_isInAFunction) {
                                 reportError("'fdone' outside of a function at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (_functionStack.back().isEmpty) {
+                                reportError("Function cannot be empty (use 'nothing') at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1108,23 +1210,33 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (_definedMacroVariables.contains(tokens[1])) {
-                                reportError("Macro with the same name is already defined");
+                            if (doesTheMacroExist(tokens[1])) {
+                                reportError("Macro " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (doesTheVariableExist(tokens[3])) {
-                                reportError("Variable with the same name as the macro is already defined");
+                            if (doesTheVariableExist(tokens[1])) {
+                                reportError("Variable " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (doesTheFunctionExist(tokens[3])) {
-                                reportError("Function with the same name as the macro is already defined");
+                            if (doesTheFunctionExist(tokens[1])) {
+                                reportError("Function " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (doesTheArrayExist(tokens[3])) {
-                                reportError("Array with the same name as the macro is already defined");
+                            if (doesTheMacroFunctionExist(tokens[1])) {
+                                reportError("Macro function " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheArrayExist(tokens[1])) {
+                                reportError("Array " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMarkExist(tokens[1])) {
+                                reportError("Mark " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1184,8 +1296,33 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (_definedMarks.contains(tokens[1])) {
-                                reportError("Mark with the same name is already defined");
+                            if (doesTheMarkExist(tokens[1])) {
+                                reportError("Mark " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheVariableExist(tokens[1])) {
+                                reportError("Variable " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheFunctionExist(tokens[1])) {
+                                reportError("Function " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroExist(tokens[1])) {
+                                reportError("Macro " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroFunctionExist(tokens[1])) {
+                                reportError("Macro function " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheArrayExist(tokens[1])) {
+                                reportError("Array " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1228,6 +1365,31 @@ class Compiler {
                             }
                             if (doesTheArrayExist(tokens[2])) {
                                 reportError("Array " + tokens[2] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheVariableExist(tokens[2])) {
+                                reportError("Variable " + tokens[2] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheFunctionExist(tokens[2])) {
+                                reportError("Function " + tokens[2] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroExist(tokens[2])) {
+                                reportError("Macro " + tokens[2] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroFunctionExist(tokens[2])) {
+                                reportError("Macro function " + tokens[2] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMarkExist(tokens[2])) {
+                                reportError("Mark " + tokens[2] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1385,6 +1547,100 @@ class Compiler {
                                 _assemblyCode.addInstructionToText(assemblyInstruction);
                             }
                             break;
+                        case InstructionType::EDITMACRO:
+                            if (tokens.size() != 4 || tokens[2] != "to") {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheMacroExist(tokens[1])) {
+                                reportError("Macro " + tokens[1] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!isANumber(tokens[3])) {
+                                reportError("Value is not a number");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            _definedMacroVariables[tokens[1]] = tokens[3];
+                            break;
+                        case InstructionType::TERMNINATECOMPILATION:
+                            _needsGetStringLength = true;
+                            if (tokens.size() != 1) {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            _terminateCompilationFlag = true;
+                            break;
+                        case InstructionType::MACROFUNCTION:
+                            if (tokens.size() != 3 || tokens[2] != "does") {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroFunctionExist(tokens[1])) {
+                                reportError("Macro function " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheVariableExist(tokens[1])) {
+                                reportError("Variable " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheFunctionExist(tokens[1])) {
+                                reportError("Function " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMacroExist(tokens[1])) {
+                                reportError("Macro " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheArrayExist(tokens[1])) {
+                                reportError("Array " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheMarkExist(tokens[1])) {
+                                reportError("Mark " + tokens[1] + " already exists");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            _definedMacroFunctions[tokens[1]] = {};
+                            _isInsideAMacroFunction = true;
+                            _currentMacroFunctionName = tokens[1];
+                            break;
+                        case InstructionType::MACROFDONE:
+                            if (tokens.size() != 1) {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (_definedMacroFunctions[_currentMacroFunctionName].empty()) {
+                                reportError("Macro function cannot be empty (use 'nothing') at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            _isInsideAMacroFunction = false;
+                            break;
+                        case InstructionType::MACROEXECUTE:
+                            if (tokens.size() != 2) {
+                                reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (!doesTheMacroFunctionExist(tokens[1])) {
+                                reportError("Macro function " + tokens[1] + " does not exist");
+                                _errorFlag = true;
+                                continue;
+                            }
+                            _isExecutingAMacroFunction = true;
+                            _currentMacroFunctionName = tokens[1];
+                            break;
                         case InstructionType::INVALID:
                             reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                             _errorFlag = true;
@@ -1501,6 +1757,27 @@ RESERVED_atoi_BY_LANGUAGE_positive:
 )";
                 _assemblyCode.addInstructionToData(newlineAssemblyCode);
             }
+            if (_needsPrint) {
+                std::string printAssemblyCode = R"(
+RESERVED_print_BY_LANGUAGE:
+    movq $1, %rax
+    syscall
+    ret
+
+)";
+                _assemblyCode.addInstructionToFunctions(printAssemblyCode);
+            }
+            if (_needsRead) {
+                std::string readAssemblyCode = R"(
+RESERVED_read_BY_LANGUAGE:
+    movq $0, %rax
+    movq $0, %rdi
+    syscall
+    ret
+
+)";
+                _assemblyCode.addInstructionToFunctions(readAssemblyCode);
+            }
             std::string exitFunctionAssemblyCode = R"(
 RESERVED_exit_BY_LANGUAGE:
     movq $60, %rax
@@ -1518,12 +1795,16 @@ RESERVED_exit_BY_LANGUAGE:
                 _errorFlag = true;
                 return;
             }
+            if (_isInsideAMacroFunction) {
+                reportError("Unterminated macro function (missing '#fdone')");
+                _errorFlag = true;
+                return;
+            }
             if (!_compileTimeIfStack.empty()) {
                 reportError("Unterminated 'if' block (missing 'done')");
                 _errorFlag = true;
                 return;
             }
-            if (_errorFlag) { return; }
             std::string finalInstruction = R"(
     xorq %rdi, %rdi
     jmp RESERVED_exit_BY_LANGUAGE

@@ -33,14 +33,26 @@ source.txt  -->  compiler  -->  source.S  -->  as  -->  source.o  -->  ld  -->  
 - User-defined **functions** are emitted into a separate `.text` section and
   invoked with `execute`. The main program body and function bodies share the
   same global variables.
-- **Compile-time directives** (`#macro`, `#if` / `#done`, and `#compileTimeInfo`,
-  `#compileTimeWarning`, `#compileTimeError`, `#compileTimeDebug`) are handled
-  entirely during compilation. They emit no assembly.
+- **Compile-time directives** (`#macro`, `#editMacro`, `#if` / `#done`,
+  `#compileTimeInfo`, `#compileTimeWarning`, `#compileTimeError`,
+  `#compileTimeDebug`, and `#terminateCompilation`) are handled entirely during
+  compilation. They emit no assembly.
+- **Macro functions** (`#macroFunction` / `#fdone` / `#execute`) record a group of
+  source lines at compile time and replay them inline wherever `#execute` appears,
+  as if you had typed them there. They are a compile-time copy/paste, distinct
+  from runtime `function` / `execute`, which emit a real `call`.
+- **Blocks may not be empty.** A runtime `if`/`else do` block, a `function`, and a
+  macro `#macroFunction` must each contain at least one instruction. Use `nothing` if
+  you genuinely want an empty block.
 - **Marks and jumps** (`mark`, `go to`) let the main program jump to named
   positions. Together with `if` / `else do` / `done` (including `equals to`,
   `is greater than`, and `is less than`), they are enough to build loops manually.
 - The program entry point is `_start`, and execution ends with the Linux
   `exit` syscall.
+- **All defined names share a single namespace.** Variables, arrays, functions,
+  macros, macro functions, and marks are checked against one another, so a name
+  used for any one of them cannot be reused for another. Defining a name that is
+  already taken by any of these is a compile error.
 
 The language works exclusively with **signed integers**.
 
@@ -102,7 +114,7 @@ ignored. There are no comments.
 | `print` | `print X` | Print `X` to standard output as a decimal number. |
 | `printString` | `printString message…` | Print a plain text message to standard output (no prefix or trailing newline). |
 | `newline` | `newline` | Print a single newline character. |
-| `add` | `add Y into X` | `X = X + Y`. |
+| `add` | `add Y to X` | `X = X + Y`. |
 | `subtract` | `subtract Y from X` | `X = X - Y`. |
 | `multiply` | `multiply X by Y` | `X = X * Y`. |
 | `divide` | `divide X by Y` | `X = X / Y` (integer division). |
@@ -115,18 +127,23 @@ ignored. There are no comments.
 | `function` | `function NAME does` | Begin a function definition named `NAME`. |
 | `fdone` | `fdone` | End the current function definition. |
 | `execute` | `execute NAME` | Call the function named `NAME`. |
-| `nothing` | `nothing` | Emit a no-op (`nop`) at run time. |
+| `nothing` | `nothing` | Emit a no-op (`nop`) at run time. Also used to fill an otherwise-empty block. |
 | `info` | `info message…` | Print an informational line to standard output: `INFO: message…`. |
 | `warning` | `warning message…` | Print a warning line to standard error: `WARNING: message…`. |
 | `error` | `error message…` | Print an error line to standard error: `ERROR: message…`. |
 | `debug` | `debug message…` | Print a debug line to standard output: `DEBUG: message…`. |
 | `#macro` | `#macro NAME is N` | Define a compile-time integer constant `NAME` with numeric value `N`. |
+| `#editMacro` | `#editMacro NAME to N` | Change an existing macro `NAME` to a new numeric value `N`. |
 | `#if` | `#if A equals to B then do` | Begin a compile-time conditional block. Both operands must be macro names. |
 | `#done` | `#done` | Close the most recently opened `#if` block. |
 | `#compileTimeInfo` | `#compileTimeInfo message…` | Print a compile-time info line to standard output. Emits no assembly. |
 | `#compileTimeWarning` | `#compileTimeWarning message…` | Print a compile-time warning line to standard error. Emits no assembly. |
 | `#compileTimeError` | `#compileTimeError message…` | Print a compile-time error line to standard error. Emits no assembly. |
 | `#compileTimeDebug` | `#compileTimeDebug message…` | Print a compile-time debug line to standard output. Emits no assembly. |
+| `#terminateCompilation` | `#terminateCompilation` | Stop compilation immediately at this line. No executable is produced. |
+| `#macroFunction` | `#macroFunction NAME does` | Begin recording a compile-time macro function named `NAME`. |
+| `#fdone` | `#fdone` | End the current macro function definition. |
+| `#execute` | `#execute NAME` | Replay every recorded line of macro function `NAME` inline at this point. |
 | `mark` | `mark NAME` | Define a named jump target in the main program. |
 | `go to` | `go to NAME` | Jump unconditionally to a previously defined mark. |
 
@@ -141,7 +158,8 @@ set counter to be 10
 
 Variables are global and live for the whole program. Re-declaring an existing
 variable, or using one that has not been declared, is a compile error. A
-variable cannot share a name with a function or an array, and vice versa.
+variable cannot share a name with a function, array, macro, macro function, or
+mark, and vice versa.
 
 ### Arrays
 
@@ -161,7 +179,7 @@ get element i from array nums and put into x
 Rules:
 
 - Array names follow the same naming rules as variables and **cannot** share a
-  name with a variable, function, or another array.
+  name with a variable, function, macro, macro function, mark, or another array.
 - The size (`N` in `with N elements`) must be a numeric literal. Array size is
   fixed at compile time; arrays cannot grow at run time.
 - Indices are **1-based**: the first slot is index `1`, the last slot is index
@@ -199,7 +217,7 @@ get element i from array data and put into x
 print x
 newline
 
-add one into i
+add one to i
 go to eachElement
 
 mark done
@@ -218,7 +236,7 @@ new total
 new amount
 set total to be 100
 set amount to be 25
-add amount into total       # total = 125
+add amount to total         # total = 125
 subtract amount from total  # total = 100
 multiply total by amount    # total = 2500
 divide total by amount      # total = 100
@@ -226,7 +244,7 @@ divide total by amount      # total = 100
 
 | Instruction | Form | Variable updated |
 | --- | --- | --- |
-| `add` | `add Y into X` | `X` (after `into`) |
+| `add` | `add Y to X` | `X` (after `to`) |
 | `subtract` | `subtract Y from X` | `X` (after `from`) |
 | `multiply` | `multiply X by Y` | `X` (first operand) |
 | `divide` | `divide X by Y` | `X` (first operand / dividend) |
@@ -327,7 +345,9 @@ Runtime conditionals start with `if` and end with `done`. All keywords on the
 | `if X is less than Y then do` | `X < Y` |
 
 `X` and `Y` must be existing variables. Conditionals can be **nested**. Each
-`if` may have at most one optional `else do` block.
+`if` may have at most one optional `else do` block. A block may **not be empty**:
+the `then` part (and the `else do` part, if present) must each contain at least
+one instruction. If you want an empty branch, put `nothing` in it.
 
 **Equals:**
 
@@ -413,8 +433,8 @@ Rules:
 - Each mark name must be unique across the whole source file.
 - A mark must be defined **before** any `go to` that targets it (the compiler
   reads the file in a single pass).
-- A mark name cannot be reused and should not match a function name (both become
-  assembly labels).
+- A mark name cannot be reused and cannot match a variable, array, function,
+  macro, or macro function name.
 
 Together with `if` / `else do` / `done`, marks and jumps are enough to build
 loops manually, the same way `while` and `for` are usually lowered to labels,
@@ -444,7 +464,7 @@ if X is greater than Y then do
     go to whileEnd
 done
 print X
-add one into X
+add one to X
 go to whileLoop
 mark whileEnd
 ```
@@ -462,10 +482,21 @@ them with `#macro`:
 
 Rules:
 
-- Macro names follow the same naming rules as variables and functions.
+- Macro names follow the same naming rules as variables and functions, and
+  cannot share a name with a variable, function, array, macro function, or mark.
 - A macro value must be a numeric literal.
 - Macros can be used anywhere a literal is accepted in `set X to be N` — the
   compiler substitutes the numeric value before generating assembly.
+
+Change an already-defined macro with `#editMacro NAME to N`:
+
+```
+#macro LIMIT is 10
+#editMacro LIMIT to 20
+```
+
+The macro must already exist and the new value must be a numeric literal.
+Subsequent uses of the macro see the new value.
 
 Compile-time conditionals use macro names instead of variables:
 
@@ -497,7 +528,7 @@ new x
 new y
 
 function calculate does
-    add y into x
+    add y to x
 fdone
 
 read x
@@ -510,10 +541,12 @@ newline
 Rules:
 
 - Function names follow the same naming rules as variables and **cannot** share a
-  name with a variable.
+  name with a variable, array, macro, macro function, or mark.
 - Nested functions are not allowed — you cannot define a function inside another
   function.
 - A function must be closed with `fdone`; leaving it open is a compile error.
+- A function body may **not be empty**. It must contain at least one instruction;
+  use `nothing` for a deliberately empty function.
 - Functions share global variables with the main program. There are no local
   variables or parameters.
 - `execute NAME` emits a `call` to the function. The function must already be
@@ -521,6 +554,57 @@ Rules:
 - Any instruction that can appear in the main program (including `if`, `exit`,
   `print`, `get element`, `set element`, and so on) can appear inside a function
   body, **except** `mark` and `go to`.
+
+### Macro functions
+
+Macro functions are a **compile-time** copy/paste mechanism, separate from the
+runtime `function` / `execute` pair. Where a runtime function emits a single
+shared block of assembly and a `call` instruction, a macro function records its
+body lines while compiling and **replays them inline** at every `#execute`, as if
+you had typed those lines yourself at that spot.
+
+Define one with `#macroFunction NAME does`, put instructions inside, and close with
+`#fdone`. Replay it with `#execute NAME`:
+
+```
+new x
+
+#macroFunction greetAndAdd does
+    printString Hello!
+    newline
+    add x to x
+#fdone
+
+set x to be 5
+#execute greetAndAdd
+print x
+newline
+```
+
+The `#execute greetAndAdd` line behaves exactly as if `printString Hello!`,
+`newline`, and `add x to x` had been written in its place.
+
+Rules:
+
+- Macro function names follow the same naming rules as macros, variables, and
+  functions, and cannot share a name with a variable, function, array, macro, or
+  mark.
+- A macro function must be **defined before** it is executed; `#execute` of an
+  unknown name is a compile error.
+- Redefining an existing macro function name is a compile error.
+- A macro function body may **not be empty** — it must contain at least one
+  instruction. Use `nothing` for a deliberately empty macro function.
+- The recorded lines are ordinary instructions and are validated when they are
+  replayed, not when they are recorded.
+
+Macro functions (`#macroFunction`) are distinct from runtime functions (`function`):
+
+| | Runtime `function` | Macro `#macroFunction` |
+| --- | --- | --- |
+| When it runs | Run time, via `call` | Compile time, inlined |
+| Emitted code | One shared block + `call` | A fresh copy at each `#execute` |
+| Invoked with | `execute NAME` | `#execute NAME` |
+| Closed with | `fdone` | `#fdone` |
 
 ### No-op (`nothing`)
 
@@ -530,6 +614,19 @@ code.
 
 ```
 nothing
+```
+
+It also doubles as the explicit "empty body" instruction. Runtime `if` / `else
+do` blocks, `function` bodies, and macro `#macroFunction` bodies may **not** be empty.
+When you genuinely want one of those blocks to do nothing, put `nothing` inside
+it:
+
+```
+if x equals to y then do
+    nothing
+else do
+    print x
+done
 ```
 
 ### Compile-time debugging
@@ -626,8 +723,8 @@ set i to be 2
 get element i from array fibonacci and put into tmp2
 get element i from array fibonacci and put into sum
 
-add tmp1 into sum
-add tmp2 into sum
+add tmp1 to sum
+add tmp2 to sum
 
 get element i from array fibonacci and put into tmp2
 set i to be 1
@@ -640,7 +737,7 @@ newline
 
 set i to be 1
 
-add i into counter
+add i to counter
 go to loop
 ```
 
@@ -694,7 +791,7 @@ new y
 function calculate does
     new temp
     set temp to be MAX
-    add y into x
+    add y to x
     if x equals to temp then do
         printString The result equals to 100!
         newline
@@ -720,6 +817,11 @@ few sharp edges worth knowing:
   rather than searching the generated `.data` section as text. Short names that
   are substrings of other identifiers (for example `line` vs `newline`) no
   longer cause false "already exists" or "does not exist" errors.
+- **All names live in one namespace.** Variables, arrays, functions, macros,
+  macro functions, and marks are all checked against one another at definition
+  time. Whenever you introduce a new name (`new`, `new array`, `function`,
+  `#macro`, `#macroFunction`, or `mark`), the compiler rejects it if that name is
+  already used by any of those categories.
 - **Instruction detection is token-based.** The compiler classifies a line from
   its first token (or first two tokens for multi-word instructions such as
   `new array`, `get element`, `set element`, and `go to`). Multi-word `if` forms
@@ -750,5 +852,18 @@ few sharp edges worth knowing:
 - **`exit` requires a variable or macro name**, not a bare numeric literal. Use
   `set code to be 0` and then `exit code`.
 - **Unclosed blocks are compile errors.** An `if` without a matching `done`, a
-  `#if` without a matching `#done`, or a `function` without a matching `fdone`,
-  is rejected after the full source file has been read.
+  `#if` without a matching `#done`, a `function` without a matching `fdone`, or a
+  `#macroFunction` without a matching `#fdone`, is rejected after the full source file
+  has been read.
+- **Empty blocks are compile errors.** A runtime `if`/`else do` block, a
+  `function` body, and a macro `#macroFunction` body must each contain at least one
+  instruction. Use `nothing` to make the empty intent explicit. (Compile-time
+  `#if` blocks may be empty, since skipping nothing is harmless.)
+- **Macro functions are compile-time inlining.** `#macroFunction` / `#execute` copy
+  the recorded lines into place during compilation; they do not emit a `call`.
+  Use runtime `function` / `execute` when you want a single shared block of code.
+- **`#editMacro` only changes existing macros.** The macro must already be
+  defined with `#macro`, and the new value must be a numeric literal.
+- **`#terminateCompilation` stops the compiler.** Compilation halts at that line
+  and no executable is produced; it is mainly useful for debugging the compile
+  pass.

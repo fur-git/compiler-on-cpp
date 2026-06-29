@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
     }
     Compiler compiler(sourceFile, is64Bits);
     compiler.compile();
-    if (!compiler._errorFlag) {
+    if (!compiler._errorFlag && !compiler._terminateCompilationFlag) {
         Compiler::reportInfo("Successfully compiled");
         if (clearObjectFiles) {
             Compiler::reportInfo("Clearing object files...");
@@ -32,11 +32,19 @@ int main(int argc, char* argv[]) {
             system("rm -f *.S");
             Compiler::reportInfo("Assembly files cleared");
         }
+    } else if (compiler._terminateCompilationFlag) {
+        Compiler::reportInfo("Compilation terminated");
+        Compiler::reportInfo("Cleaning up...");
+        std::string base = sourceFile.substr(0, sourceFile.find_last_of('.'));
+        system(std::format("rm -f {}.S", base).c_str());
+        system(std::format("rm -f {}.o", base).c_str());
+        return 0;
     } else {
         Compiler::reportError("Compilation failed");
         Compiler::reportInfo("Cleaning up...");
         std::string base = sourceFile.substr(0, sourceFile.find_last_of('.'));
         system(std::format("rm -f {}.S", base).c_str());
+        system(std::format("rm -f {}.o", base).c_str());
         return 1;
     }
     return 0;
