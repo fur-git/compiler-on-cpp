@@ -95,6 +95,7 @@ class Compiler {
         std::vector<ConditionalMetadata> _conditionalMetadataStack;
         std::vector<FunctionMetadata> _functionStack;
         std::vector<uint16_t> _compileTimeIfStack;
+        std::vector<std::string> _macroFunctionReplayQueue;
         std::vector<ArrayMetadata> _definedArrays;
         std::map<std::string, std::string> _definedMacroVariables;
         std::map<std::string, std::vector<std::string>> _definedMacroFunctions;
@@ -262,14 +263,14 @@ class Compiler {
             uint16_t arraySize = 0;
             uint16_t elementCount = 0;
             std::string line;
-            while (!_sourceCodeFile.eof()) {
+            while (_isExecutingAMacroFunction || !_sourceCodeFile.eof()) {
                 if (_isExecutingAMacroFunction) {
-                    if (_definedMacroFunctions[_currentMacroFunctionName].empty()) {
+                    if (_macroFunctionReplayQueue.empty()) {
                         _isExecutingAMacroFunction = false;
                         continue;
                     }
-                    line = _definedMacroFunctions[_currentMacroFunctionName].front();
-                    _definedMacroFunctions[_currentMacroFunctionName].erase(_definedMacroFunctions[_currentMacroFunctionName].begin());
+                    line = _macroFunctionReplayQueue.front();
+                    _macroFunctionReplayQueue.erase(_macroFunctionReplayQueue.begin());
                 } else {
                     std::getline(_sourceCodeFile, line);
                 }
@@ -589,7 +590,7 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (!doesTheVariableExist(tokens[1]) && !doesTheMacroExist(tokens[1])) {
+                            if (!doesTheVariableExist(tokens[1])) {
                                 reportError("Variable " + tokens[1] + " does not exist");
                                 _errorFlag = true;
                                 continue;
@@ -627,7 +628,7 @@ class Compiler {
                                 continue;
                             }
                             if (!doesTheVariableExist(tokens[4])) {
-                                reportError("Variable " + tokens[3] + " does not exist");
+                                reportError("Variable " + tokens[4] + " does not exist");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -850,12 +851,12 @@ class Compiler {
                             assemblyInstruction = std::format(R"(
     info_{}: .asciz "INFO: )", _variableCounter);
                             _assemblyCode.addInstructionToData(assemblyInstruction);
-                            for (uint16_t i = 0; i < tokens.size(); i++) {
-                                if (tokens[i] != "info" && i != tokens.size() - 1) {
+                            for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (i != tokens.size() - 1) {
                                     assemblyInstruction = std::format("{} ", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
-                                else if (i == tokens.size() - 1) {
+                                else {
                                     assemblyInstruction = std::format("{}\\n", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
@@ -888,12 +889,12 @@ class Compiler {
                             assemblyInstruction = std::format(R"(
     warning_{}: .asciz "WARNING: )", _variableCounter);
                             _assemblyCode.addInstructionToData(assemblyInstruction);
-                            for (uint16_t i = 0; i < tokens.size(); i++) {
-                                if (tokens[i] != "warning" && i != tokens.size() - 1) {
+                            for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (i != tokens.size() - 1) {
                                     assemblyInstruction = std::format("{} ", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
-                                else if (i == tokens.size() - 1) {
+                                else {
                                     assemblyInstruction = std::format("{}\\n", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
@@ -926,12 +927,12 @@ class Compiler {
                             assemblyInstruction = std::format(R"(
     error_{}: .asciz "ERROR: )", _variableCounter);
                             _assemblyCode.addInstructionToData(assemblyInstruction);
-                            for (uint16_t i = 0; i < tokens.size(); i++) {
-                                if (tokens[i] != "error" && i != tokens.size() - 1) {
+                            for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (i != tokens.size() - 1) {
                                     assemblyInstruction = std::format("{} ", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
-                                else if (i == tokens.size() - 1) {
+                                else {
                                     assemblyInstruction = std::format("{}\\n", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
@@ -963,12 +964,12 @@ class Compiler {
                             assemblyInstruction = std::format(R"(
     debug_{}: .asciz "DEBUG: )", _variableCounter);
                             _assemblyCode.addInstructionToData(assemblyInstruction);
-                            for (uint16_t i = 0; i < tokens.size(); i++) {
-                                if (tokens[i] != "debug" && i != tokens.size() - 1) {
+                            for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (i != tokens.size() - 1) {
                                     assemblyInstruction = std::format("{} ", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
-                                else if (i == tokens.size() - 1) {
+                                else {
                                     assemblyInstruction = std::format("{}\\n", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
@@ -1001,12 +1002,12 @@ class Compiler {
                             assemblyInstruction = std::format(R"(
     string_{}: .asciz ")", _variableCounter);
                             _assemblyCode.addInstructionToData(assemblyInstruction);
-                            for (uint16_t i = 0; i < tokens.size(); i++) {
-                                if (tokens[i] != "printString" && i != tokens.size() - 1) {
+                            for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (i != tokens.size() - 1) {
                                     assemblyInstruction = std::format("{} ", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
-                                else if (i == tokens.size() - 1) {
+                                else {
                                     assemblyInstruction = std::format("{}", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
                                 }
@@ -1143,11 +1144,11 @@ class Compiler {
                                 continue;
                             }
                             endMessage = "CompileTime Info: ";
-                            for (uint16_t i = 0; i < tokens.size(); i++) {
-                                if (tokens[i] != "#compileTimeInfo" && i != tokens.size() - 1) {
+                            for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (i != tokens.size() - 1) {
                                     endMessage += std::format("{} ", tokens[i]);
                                 }
-                                else if (i == tokens.size() - 1) {
+                                else {
                                     endMessage += std::format("{}", tokens[i]);
                                 }
                             }
@@ -1160,11 +1161,11 @@ class Compiler {
                                 continue;
                             }
                             endMessage = "CompileTime Warning: ";
-                            for (uint16_t i = 0; i < tokens.size(); i++) {
-                                if (tokens[i] != "#compileTimeWarning" && i != tokens.size() - 1) {
+                            for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (i != tokens.size() - 1) {
                                     endMessage += std::format("{} ", tokens[i]);
                                 }
-                                else if (i == tokens.size() - 1) {
+                                else {
                                     endMessage += std::format("{}", tokens[i]);
                                 }
                             }
@@ -1177,11 +1178,11 @@ class Compiler {
                                 continue;
                             }
                             endMessage = "CompileTime Error: ";
-                            for (uint16_t i = 0; i < tokens.size(); i++) {
-                                if (tokens[i] != "#compileTimeError" && i != tokens.size() - 1) {
+                            for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (i != tokens.size() - 1) {
                                     endMessage += std::format("{} ", tokens[i]);
                                 }
-                                else if (i == tokens.size() - 1) {
+                                else {
                                     endMessage += std::format("{}", tokens[i]);
                                 }
                             }
@@ -1194,11 +1195,11 @@ class Compiler {
                                 continue;
                             }
                             endMessage = "CompileTime Debug: ";
-                            for (uint16_t i = 0; i < tokens.size(); i++) {
-                                if (tokens[i] != "#compileTimeDebug" && i != tokens.size() - 1) {
+                            for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (i != tokens.size() - 1) {
                                     endMessage += std::format("{} ", tokens[i]);
                                 }
-                                else if (i == tokens.size() - 1) {
+                                else {
                                     endMessage += std::format("{}", tokens[i]);
                                 }
                             }
@@ -1620,6 +1621,11 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
+                            if (!_isInsideAMacroFunction) {
+                                reportError("'#fdone' outside of a macro function at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
                             if (_definedMacroFunctions[_currentMacroFunctionName].empty()) {
                                 reportError("Macro function cannot be empty (use 'nothing') at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
@@ -1639,7 +1645,7 @@ class Compiler {
                                 continue;
                             }
                             _isExecutingAMacroFunction = true;
-                            _currentMacroFunctionName = tokens[1];
+                            _macroFunctionReplayQueue = _definedMacroFunctions[tokens[1]];
                             break;
                         case InstructionType::INVALID:
                             reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
