@@ -95,7 +95,7 @@ class Compiler {
         std::vector<ConditionalMetadata> _conditionalMetadataStack;
         std::vector<FunctionMetadata> _functionStack;
         std::vector<uint16_t> _compileTimeIfStack;
-        std::vector<std::string> _macroFunctionReplayQueue;
+        std::vector<std::string> _macroFunctionCodeToExecute;
         std::vector<ArrayMetadata> _definedArrays;
         std::map<std::string, std::string> _definedMacroVariables;
         std::map<std::string, std::vector<std::string>> _definedMacroFunctions;
@@ -141,7 +141,7 @@ class Compiler {
             if (tokensVector[0] == "#compileTimeDebug") return InstructionType::COMPILETIMEDEBUG;
             if (tokensVector[0] == "#editMacro") return InstructionType::EDITMACRO;
             if (tokensVector[0] == "#terminateCompilation") return InstructionType::TERMNINATECOMPILATION;
-            if (tokensVector[0] == "#macroFunction") return InstructionType::MACROFUNCTION;
+            if (tokensVector[0] == "#function") return InstructionType::MACROFUNCTION;
             if (tokensVector[0] == "#fdone") return InstructionType::MACROFDONE;
             if (tokensVector[0] == "#execute") return InstructionType::MACROEXECUTE;
             if (tokensVector[0] == "info") return InstructionType::INFO;
@@ -214,6 +214,14 @@ class Compiler {
             }
             return { "", 0 };
         }
+        bool doesTheAnythingAlreadyExist(const std::string& name) {
+            return doesTheVariableExist(name) ||
+                doesTheFunctionExist(name) ||
+                doesTheMacroExist(name) ||
+                doesTheMacroFunctionExist(name) ||
+                doesTheArrayExist(name) ||
+                doesTheMarkExist(name);
+        }
     public:
         bool _errorFlag;
         bool _terminateCompilationFlag;
@@ -265,12 +273,12 @@ class Compiler {
             std::string line;
             while (_isExecutingAMacroFunction || !_sourceCodeFile.eof()) {
                 if (_isExecutingAMacroFunction) {
-                    if (_macroFunctionReplayQueue.empty()) {
+                    if (_macroFunctionCodeToExecute.empty()) {
                         _isExecutingAMacroFunction = false;
                         continue;
                     }
-                    line = _macroFunctionReplayQueue.front();
-                    _macroFunctionReplayQueue.erase(_macroFunctionReplayQueue.begin());
+                    line = _macroFunctionCodeToExecute.front();
+                    _macroFunctionCodeToExecute.erase(_macroFunctionCodeToExecute.begin());
                 } else {
                     std::getline(_sourceCodeFile, line);
                 }
@@ -351,33 +359,8 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (doesTheVariableExist(tokens[1])) {
-                                reportError("Variable " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheFunctionExist(tokens[1])) {
-                                reportError("Function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroExist(tokens[1])) {
-                                reportError("Macro " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroFunctionExist(tokens[1])) {
-                                reportError("Macro function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheArrayExist(tokens[1])) {
-                                reportError("Array " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMarkExist(tokens[1])) {
-                                reportError("Mark " + tokens[1] + " already exists");
+                            if (doesTheAnythingAlreadyExist(tokens[1])) {
+                                reportError("Something with the same name as " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1050,33 +1033,8 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (doesTheFunctionExist(tokens[1])) {
-                                reportError("Function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheVariableExist(tokens[1])) {
-                                reportError("Variable " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroExist(tokens[1])) {
-                                reportError("Macro " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroFunctionExist(tokens[1])) {
-                                reportError("Macro function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheArrayExist(tokens[1])) {
-                                reportError("Array " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMarkExist(tokens[1])) {
-                                reportError("Mark " + tokens[1] + " already exists");
+                            if (doesTheAnythingAlreadyExist(tokens[1])) {
+                                reportError("Something with the same name as " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1211,33 +1169,8 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (doesTheMacroExist(tokens[1])) {
-                                reportError("Macro " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheVariableExist(tokens[1])) {
-                                reportError("Variable " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheFunctionExist(tokens[1])) {
-                                reportError("Function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroFunctionExist(tokens[1])) {
-                                reportError("Macro function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheArrayExist(tokens[1])) {
-                                reportError("Array " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMarkExist(tokens[1])) {
-                                reportError("Mark " + tokens[1] + " already exists");
+                            if (doesTheAnythingAlreadyExist(tokens[1])) {
+                                reportError("Something with the same name as " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1297,33 +1230,8 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (doesTheMarkExist(tokens[1])) {
-                                reportError("Mark " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheVariableExist(tokens[1])) {
-                                reportError("Variable " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheFunctionExist(tokens[1])) {
-                                reportError("Function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroExist(tokens[1])) {
-                                reportError("Macro " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroFunctionExist(tokens[1])) {
-                                reportError("Macro function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheArrayExist(tokens[1])) {
-                                reportError("Array " + tokens[1] + " already exists");
+                            if (doesTheAnythingAlreadyExist(tokens[1])) {
+                                reportError("Something with the same name as " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1364,33 +1272,8 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (doesTheArrayExist(tokens[2])) {
-                                reportError("Array " + tokens[2] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheVariableExist(tokens[2])) {
-                                reportError("Variable " + tokens[2] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheFunctionExist(tokens[2])) {
-                                reportError("Function " + tokens[2] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroExist(tokens[2])) {
-                                reportError("Macro " + tokens[2] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroFunctionExist(tokens[2])) {
-                                reportError("Macro function " + tokens[2] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMarkExist(tokens[2])) {
-                                reportError("Mark " + tokens[2] + " already exists");
+                            if (doesTheAnythingAlreadyExist(tokens[2])) {
+                                reportError("Something with the same name as " + tokens[2] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1581,33 +1464,8 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (doesTheMacroFunctionExist(tokens[1])) {
-                                reportError("Macro function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheVariableExist(tokens[1])) {
-                                reportError("Variable " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheFunctionExist(tokens[1])) {
-                                reportError("Function " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMacroExist(tokens[1])) {
-                                reportError("Macro " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheArrayExist(tokens[1])) {
-                                reportError("Array " + tokens[1] + " already exists");
-                                _errorFlag = true;
-                                continue;
-                            }
-                            if (doesTheMarkExist(tokens[1])) {
-                                reportError("Mark " + tokens[1] + " already exists");
+                            if (doesTheAnythingAlreadyExist(tokens[1])) {
+                                reportError("Something with the same name as " + tokens[1] + " already exists");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1645,7 +1503,7 @@ class Compiler {
                                 continue;
                             }
                             _isExecutingAMacroFunction = true;
-                            _macroFunctionReplayQueue = _definedMacroFunctions[tokens[1]];
+                            _macroFunctionCodeToExecute = _definedMacroFunctions[tokens[1]];
                             break;
                         case InstructionType::INVALID:
                             reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
