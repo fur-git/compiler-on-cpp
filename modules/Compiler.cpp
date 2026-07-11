@@ -284,6 +284,10 @@ class Compiler {
                 std::string token;
                 std::string variableName;
                 while (ss >> token) { tokens.push_back(token); }
+                auto commentPosition = std::find(tokens.begin(), tokens.end(), "//");
+                if (commentPosition != tokens.end()) {
+                    tokens.erase(commentPosition, tokens.end());
+                }
                 if (tokens.empty()) { continue; }
                 InstructionType instructionType = getInstructionType(tokens);
                 if (_isSkippingCode && instructionType != InstructionType::COMPILETIMEDONE) { continue; }

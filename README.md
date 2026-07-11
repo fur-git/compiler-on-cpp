@@ -101,10 +101,12 @@ fails, the generated `.S` for the source is removed automatically.
 ## Language syntax
 
 One instruction per line. Tokens are separated by whitespace. Blank lines are
-ignored. There are no comments.
+ignored. Comments begin with `//`. The comment marker must be separated from the
+instruction by whitespace.
 
 | Instruction | Form | Meaning |
 | --- | --- | --- |
+| Comment | `// message…` | Ignore the rest of the line. Comments may also follow an instruction. |
 | `new` | `new X` | Declare integer variable `X`, initialized to `0`. |
 | `new array` | `new array A with N elements` | Declare array `A` with `N` integer slots, all initialized to `0`. |
 | `get element` | `get element I from array A and put into X` | Copy array slot `I` into variable `X`. |
