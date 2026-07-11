@@ -37,12 +37,12 @@ source.txt  -->  compiler  -->  source.S  -->  as  -->  source.o  -->  ld  -->  
   `#compileTimeInfo`, `#compileTimeWarning`, `#compileTimeError`,
   `#compileTimeDebug`, and `#terminateCompilation`) are handled entirely during
   compilation. They emit no assembly.
-- **Macro functions** (`#macroFunction` / `#fdone` / `#execute`) record a group of
+- **Macro functions** (`#function` / `#fdone` / `#execute`) record a group of
   source lines at compile time and replay them inline wherever `#execute` appears,
   as if you had typed them there. They are a compile-time copy/paste, distinct
   from runtime `function` / `execute`, which emit a real `call`.
 - **Blocks may not be empty.** A runtime `if`/`else do` block, a `function`, and a
-  macro `#macroFunction` must each contain at least one instruction. Use `nothing` if
+  macro `#function` must each contain at least one instruction. Use `nothing` if
   you genuinely want an empty block.
 - **Marks and jumps** (`mark`, `go to`) let the main program jump to named
   positions. Together with `if` / `else do` / `done` (including `equals to`,
@@ -91,9 +91,9 @@ Run it with:
 | Flag | Description |
 | --- | --- |
 | `--64bits` | Generate 64-bit code (this is the **default**). |
-| `--32bits` | Generate 32-bit-width variables (`.long`) and 32-bit arithmetic. |
-| `--clearObjectFiles` | Delete `*.o` files after a successful build. |
-| `--clearAssemblyFiles` | Delete `*.S` files after a successful build. |
+| `--32bits` | Generate 32-bit-width variables (`.long`) and 32-bit arithmetic. The generated executable is still x86-64 Linux code. |
+| `--clearObjectFiles` | Delete all `*.o` files in the current working directory after a successful build. |
+| `--clearAssemblyFiles` | Delete all `*.S` files in the current working directory after a successful build. |
 
 The first non-flag argument is treated as the source file. If compilation
 fails, the generated `.S` for the source is removed automatically.
@@ -141,7 +141,7 @@ ignored. There are no comments.
 | `#compileTimeError` | `#compileTimeError message…` | Print a compile-time error line to standard error. Emits no assembly. |
 | `#compileTimeDebug` | `#compileTimeDebug message…` | Print a compile-time debug line to standard output. Emits no assembly. |
 | `#terminateCompilation` | `#terminateCompilation` | Stop compilation immediately at this line. No executable is produced. |
-| `#macroFunction` | `#macroFunction NAME does` | Begin recording a compile-time macro function named `NAME`. |
+| `#function` | `#function NAME does` | Begin recording a compile-time macro function named `NAME`. |
 | `#fdone` | `#fdone` | End the current macro function definition. |
 | `#execute` | `#execute NAME` | Replay every recorded line of macro function `NAME` inline at this point. |
 | `mark` | `mark NAME` | Define a named jump target in the main program. |
@@ -563,13 +563,13 @@ shared block of assembly and a `call` instruction, a macro function records its
 body lines while compiling and **replays them inline** at every `#execute`, as if
 you had typed those lines yourself at that spot.
 
-Define one with `#macroFunction NAME does`, put instructions inside, and close with
+Define one with `#function NAME does`, put instructions inside, and close with
 `#fdone`. Replay it with `#execute NAME`:
 
 ```
 new x
 
-#macroFunction greetAndAdd does
+#function greetAndAdd does
     printString Hello!
     newline
     add x to x
@@ -597,9 +597,9 @@ Rules:
 - The recorded lines are ordinary instructions and are validated when they are
   replayed, not when they are recorded.
 
-Macro functions (`#macroFunction`) are distinct from runtime functions (`function`):
+Macro functions (`#function`) are distinct from runtime functions (`function`):
 
-| | Runtime `function` | Macro `#macroFunction` |
+| | Runtime `function` | Macro `#function` |
 | --- | --- | --- |
 | When it runs | Run time, via `call` | Compile time, inlined |
 | Emitted code | One shared block + `call` | A fresh copy at each `#execute` |
@@ -617,7 +617,7 @@ nothing
 ```
 
 It also doubles as the explicit "empty body" instruction. Runtime `if` / `else
-do` blocks, `function` bodies, and macro `#macroFunction` bodies may **not** be empty.
+do` blocks, `function` bodies, and macro `#function` bodies may **not** be empty.
 When you genuinely want one of those blocks to do nothing, put `nothing` inside
 it:
 
@@ -820,7 +820,7 @@ few sharp edges worth knowing:
 - **All names live in one namespace.** Variables, arrays, functions, macros,
   macro functions, and marks are all checked against one another at definition
   time. Whenever you introduce a new name (`new`, `new array`, `function`,
-  `#macro`, `#macroFunction`, or `mark`), the compiler rejects it if that name is
+  `#macro`, `#function`, or `mark`), the compiler rejects it if that name is
   already used by any of those categories.
 - **Instruction detection is token-based.** The compiler classifies a line from
   its first token (or first two tokens for multi-word instructions such as
@@ -853,13 +853,13 @@ few sharp edges worth knowing:
   `set code to be 0` and then `exit code`.
 - **Unclosed blocks are compile errors.** An `if` without a matching `done`, a
   `#if` without a matching `#done`, a `function` without a matching `fdone`, or a
-  `#macroFunction` without a matching `#fdone`, is rejected after the full source file
+  `#function` without a matching `#fdone`, is rejected after the full source file
   has been read.
 - **Empty blocks are compile errors.** A runtime `if`/`else do` block, a
-  `function` body, and a macro `#macroFunction` body must each contain at least one
+  `function` body, and a macro `#function` body must each contain at least one
   instruction. Use `nothing` to make the empty intent explicit. (Compile-time
   `#if` blocks may be empty, since skipping nothing is harmless.)
-- **Macro functions are compile-time inlining.** `#macroFunction` / `#execute` copy
+- **Macro functions are compile-time inlining.** `#function` / `#execute` copy
   the recorded lines into place during compilation; they do not emit a `call`.
   Use runtime `function` / `execute` when you want a single shared block of code.
 - **`#editMacro` only changes existing macros.** The macro must already be

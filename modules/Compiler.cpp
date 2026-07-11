@@ -250,12 +250,6 @@ class Compiler {
             _needsRead = false;
             _needsPrint = false;
             _isInsideAMacroFunction = false;
-            _definedFunctions.clear();
-            _definedVariables.clear();
-            _definedMacroVariables.clear();
-            _compileTimeIfStack.clear();
-            _definedMarks.clear();
-            _definedArrays.clear();
             if (!_sourceCodeFile.is_open()) {
                 reportError("Failed to open source code file: " + filename);
                 return;
