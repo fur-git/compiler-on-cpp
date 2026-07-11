@@ -98,6 +98,7 @@ class Compiler {
         std::vector<std::string> _macroFunctionCodeToExecute;
         std::vector<ArrayMetadata> _definedArrays;
         std::map<std::string, std::string> _definedMacroVariables;
+        std::map<std::string, std::string> _definedStringMacroVariables;
         std::map<std::string, std::vector<std::string>> _definedMacroFunctions;
         std::set<std::string> _definedFunctions;
         std::set<std::string> _definedVariables;
@@ -188,6 +189,9 @@ class Compiler {
         bool doesTheMacroExist(const std::string& macroName) {
             return _definedMacroVariables.contains(macroName);
         }
+        bool doesTheStringMacroExist(const std::string& macroName) {
+            return _definedStringMacroVariables.contains(macroName);
+        }
         bool doesTheMacroFunctionExist(const std::string& macroFunctionName) {
             return _definedMacroFunctions.contains(macroFunctionName);
         }
@@ -218,6 +222,7 @@ class Compiler {
             return doesTheVariableExist(name) ||
                 doesTheFunctionExist(name) ||
                 doesTheMacroExist(name) ||
+                doesTheStringMacroExist(name) ||
                 doesTheMacroFunctionExist(name) ||
                 doesTheArrayExist(name) ||
                 doesTheMarkExist(name);
@@ -984,6 +989,9 @@ class Compiler {
     string_{}: .asciz ")", _variableCounter);
                             _assemblyCode.addInstructionToData(assemblyInstruction);
                             for (uint16_t i = 1; i < tokens.size(); i++) {
+                                if (doesTheStringMacroExist(tokens[i])) {
+                                    tokens[i] = _definedStringMacroVariables[tokens[i]];
+                                }
                                 if (i != tokens.size() - 1) {
                                     assemblyInstruction = std::format("{} ", tokens[i]);
                                     _assemblyCode.addInstructionToData(assemblyInstruction);
@@ -1162,7 +1170,7 @@ class Compiler {
                             reportDebug(endMessage);
                             break;
                         case InstructionType::MACRO:
-                            if (tokens.size() != 4 || tokens[2] != "is") {
+                            if (tokens.size() < 4 || tokens[2] != "is") {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
@@ -1172,7 +1180,27 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (!isANumber(tokens[3])) {
+                            if (tokens[3].find('"') != std::string::npos) {
+                                std::string stringMacroValue;
+                                for (uint16_t i = 3; i < tokens.size(); i++) {
+                                    if (i != tokens.size() - 1) {
+                                        stringMacroValue += std::format("{} ", tokens[i]);
+                                    } else {
+                                        stringMacroValue += tokens[i];
+                                    }
+                                }
+                                if (stringMacroValue.front() != '"' ||
+                                    stringMacroValue.back() != '"') {
+                                    reportError("String macro value must begin and end with a double quote");
+                                    _errorFlag = true;
+                                    continue;
+                                }
+                                stringMacroValue.erase(stringMacroValue.begin());
+                                stringMacroValue.pop_back();
+                                _definedStringMacroVariables[tokens[1]] = stringMacroValue;
+                                break;
+                            }
+                            if (tokens.size() != 4 || !isANumber(tokens[3])) {
                                 reportError("Macro value is not a number");
                                 _errorFlag = true;
                                 continue;
@@ -1432,6 +1460,11 @@ class Compiler {
                         case InstructionType::EDITMACRO:
                             if (tokens.size() != 4 || tokens[2] != "to") {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
+                                _errorFlag = true;
+                                continue;
+                            }
+                            if (doesTheStringMacroExist(tokens[1])) {
+                                reportError("String macros cannot be edited");
                                 _errorFlag = true;
                                 continue;
                             }

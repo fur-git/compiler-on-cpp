@@ -134,7 +134,7 @@ instruction by whitespace.
 | `warning` | `warning message…` | Print a warning line to standard error: `WARNING: message…`. |
 | `error` | `error message…` | Print an error line to standard error: `ERROR: message…`. |
 | `debug` | `debug message…` | Print a debug line to standard output: `DEBUG: message…`. |
-| `#macro` | `#macro NAME is N` | Define a compile-time integer constant `NAME` with numeric value `N`. |
+| `#macro` | `#macro NAME is VALUE` | Define a compile-time numeric or quoted string constant. |
 | `#editMacro` | `#editMacro NAME to N` | Change an existing macro `NAME` to a new numeric value `N`. |
 | `#if` | `#if A equals to B then do` | Begin a compile-time conditional block. Both operands must be macro names. |
 | `#done` | `#done` | Close the most recently opened `#if` block. |
@@ -473,8 +473,8 @@ mark whileEnd
 
 ### Macros and compile-time conditionals
 
-Macros are integer constants resolved while the compiler is running. Define
-them with `#macro`:
+Macros are numeric or string constants resolved while the compiler is running.
+Define numeric macros with `#macro`:
 
 ```
 #macro TRUE is 1
@@ -482,13 +482,24 @@ them with `#macro`:
 #macro LIMIT is 10
 ```
 
+String macros begin and end with double quotes and may contain multiple words:
+
+```
+#macro GREETING is "Hello from a string macro!"
+printString GREETING
+```
+
 Rules:
 
 - Macro names follow the same naming rules as variables and functions, and
   cannot share a name with a variable, function, array, macro function, or mark.
-- A macro value must be a numeric literal.
-- Macros can be used anywhere a literal is accepted in `set X to be N` — the
+- A numeric macro value must be a numeric literal.
+- A string macro is selected when the first value token contains a double quote.
+  Its complete value must begin and end with double quotes.
+- Numeric macros can be used anywhere a literal is accepted in `set X to be N` — the
   compiler substitutes the numeric value before generating assembly.
+- String macros can be used in `printString`. They may appear alone or alongside
+  other text and string macros.
 
 Change an already-defined macro with `#editMacro NAME to N`:
 
@@ -498,7 +509,7 @@ Change an already-defined macro with `#editMacro NAME to N`:
 ```
 
 The macro must already exist and the new value must be a numeric literal.
-Subsequent uses of the macro see the new value.
+Subsequent uses of the macro see the new value. String macros cannot be edited.
 
 Compile-time conditionals use macro names instead of variables:
 
