@@ -1317,14 +1317,15 @@ class Compiler {
                             _definedArrays.push_back({ tokens[2], arraySize });
                             break;
                         case InstructionType::GETELEMENT:
-                            if (tokens.size() != 10 ||
+                            if (tokens.size() != 11 ||
                                 tokens[0] != "get" ||
                                 tokens[1] != "element" ||
                                 tokens[3] != "from" ||
                                 tokens[4] != "array" ||
                                 tokens[6] != "and" ||
                                 tokens[7] != "put" ||
-                                tokens[8] != "into") {
+                                tokens[8] != "it" ||
+                                tokens[9] != "into") {
                                 reportError("Invalid instruction: " + line + " at line " + std::to_string(lineNumber));
                                 _errorFlag = true;
                                 continue;
@@ -1334,8 +1335,8 @@ class Compiler {
                                 _errorFlag = true;
                                 continue;
                             }
-                            if (!doesTheVariableExist(tokens[9])) {
-                                reportError("Variable " + tokens[9] + " does not exist");
+                            if (!doesTheVariableExist(tokens[10])) {
+                                reportError("Variable " + tokens[10] + " does not exist");
                                 _errorFlag = true;
                                 continue;
                             }
@@ -1361,7 +1362,7 @@ class Compiler {
     movq $1, %rdi
     jmp RESERVED_exit_BY_LANGUAGE
 .Larray_done_{}:
-)", tokens[2], _labelCounter, elementCount, _labelCounter, tokens[5], tokens[9], _labelCounter, _labelCounter, _labelCounter);
+)", tokens[2], _labelCounter, elementCount, _labelCounter, tokens[5], tokens[10], _labelCounter, _labelCounter, _labelCounter);
                             } else {
                                 assemblyInstruction = std::format(R"(
     movslq {}(%rip), %rcx
@@ -1378,7 +1379,7 @@ class Compiler {
     movq $1, %rdi
     jmp RESERVED_exit_BY_LANGUAGE
 .Larray_done_{}:
-)", tokens[2], _labelCounter, elementCount, _labelCounter, tokens[5], tokens[9], _labelCounter, _labelCounter, _labelCounter);
+)", tokens[2], _labelCounter, elementCount, _labelCounter, tokens[5], tokens[10], _labelCounter, _labelCounter, _labelCounter);
                             }
                             _labelCounter++;
                             if (_isInAFunction) {

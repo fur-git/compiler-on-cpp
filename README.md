@@ -109,7 +109,7 @@ instruction by whitespace.
 | Comment | `// message…` | Ignore the rest of the line. Comments may also follow an instruction. |
 | `new` | `new X` | Declare integer variable `X`, initialized to `0`. |
 | `new array` | `new array A with N elements` | Declare array `A` with `N` integer slots, all initialized to `0`. |
-| `get element` | `get element I from array A and put into X` | Copy array slot `I` into variable `X`. |
+| `get element` | `get element I from array A and put it into X` | Copy array slot `I` into variable `X`. |
 | `set element` | `set element I from array A to be X` | Copy variable `X` into array slot `I`. |
 | `set` | `set X to be N` | Assign integer literal `N` (or a macro name) to `X`. |
 | `read` | `read X` | Read an integer from standard input into `X`. |
@@ -175,7 +175,7 @@ new x
 set i to be 1
 set x to be 42
 set element i from array nums to be x
-get element i from array nums and put into x
+get element i from array nums and put it into x
 ```
 
 Rules:
@@ -215,7 +215,7 @@ if i is greater than 3 then do
     go to done
 done
 
-get element i from array data and put into x
+get element i from array data and put it into x
 print x
 newline
 
@@ -731,15 +731,15 @@ if counter equals to finishValue then do
 done
 
 set i to be 1
-get element i from array fibonacci and put into tmp1
+get element i from array fibonacci and put it into tmp1
 set i to be 2
-get element i from array fibonacci and put into tmp2
-get element i from array fibonacci and put into sum
+get element i from array fibonacci and put it into tmp2
+get element i from array fibonacci and put it into sum
 
 add tmp1 to sum
 add tmp2 to sum
 
-get element i from array fibonacci and put into tmp2
+get element i from array fibonacci and put it into tmp2
 set i to be 1
 set element i from array fibonacci to be tmp2
 set i to be 2
